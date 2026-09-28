@@ -44,9 +44,9 @@ once, then reopen the terminal / VS Code.
 ```
 README.md  requirements.txt  pyproject.toml  walkthrough.ipynb
 scrp_toolkit/            the package (config, reliability, features, inference, scoring, dataset,
-                         model, train, compare, validate, baseline, edge_cases, cli)
+                         model, train, compare, validate, baseline, edge_cases, rds, cli)
   known_answers/         rya_baseline.json (Box SHA-1s + recorded outputs), murat_notebook_reference.json
-tests/                   29 unit + end-to-end tests on synthetic data (CI runs them on every push)
+tests/                   30 unit + end-to-end tests on synthetic data (CI runs them on every push)
 docs/findings.md         findings, data issues and open questions for RYA
 data/                    the customer's files, in Box's own folder structure (read-only!)
   Final Network w Code (15-07-2022)/final_network_July15_22/
@@ -61,7 +61,7 @@ data/                    the customer's files, in Box's own folder structure (re
 ## Team git workflow
 
 - `main` is the **baseline**: code that passes `python -m scrp_toolkit.cli baseline` (359/359)
-  and `pytest`. Nobody commits to it directly.
+  and `pytest` (30 passed). Nobody commits to it directly.
 - Everyone works on their own branch: `shlok`, `murat`, `sin-wei`, `shuyun`, `pratik`
   (already created). Start of each session: `git switch <you>` then `git merge main`.
 - **Never edit `data/` or `scrp_toolkit/known_answers/`.** If you must change the pipeline,
@@ -107,10 +107,9 @@ saving (or Ctrl+Shift+P → "File: Revert File") so the old copy isn't saved ove
 | 6 | `dataset.py` | RYA's own `D_hat_Dataset` (`net_dataset_init_B.py`) run live: reproduces EXP002.json (≤5e-11); ours identical to RYA's (same 48,924 training rows, features and targets) | done |
 | 7 | `model.py` | ONNX weights loaded into our `Net`: identical outputs (0.0), 1,261,058 parameters; `K`/`KL` identical to `misc_functions.py` (0.0) | done |
 | 8 | `scoring.py` | RY25 case-study school: 40 items, identical to the recorded baseline and to Murat's 15 four-option rows | done |
-| 9 | `cli.py`, `baseline.py`, tests, `edge_cases.py` | 359/359 baseline checks, 29/29 tests, 8 edge cases (3 flagged for SIN-WEI) | done |
+| 9 | `cli.py`, `baseline.py`, tests, `edge_cases.py` | 359/359 baseline checks, 30/30 tests, 8 edge cases (3 flagged for SIN-WEI) | done |
 
-Running the whole notebook takes about 5–7 minutes (Restart → Run All). Step 3b installs `rdata`
-automatically if it's missing.
+Running the whole notebook takes about 5–7 minutes (Restart → Run All).
 
 ## Running it
 
@@ -198,7 +197,7 @@ that step is in RYA's JavaScript, not in Box, so it isn't part of this baseline 
 
 | Command | Expect |
 |---|---|
-| `pytest -q` | `29 passed` (synthetic data; also runs in CI) |
+| `pytest -q` | `30 passed` (synthetic data; also runs in CI) |
 | `validate --known-answers scrp_toolkit/known_answers/ry9_example.json` | `[PASS]` shape `9.9705`, rate `20.9264` |
 | `gen-edge-cases --check-response-cases` | 8 cases; `all_same_option`, `single_respondent`, `empty_group` flagged (known NaN finding) |
 | `train` / `compare --quick-demo` | Runs. Only for training experiments. Not part of the baseline. |
@@ -232,7 +231,7 @@ from the original portal script. The team needs to decide whether to guard it up
 
 ## Testing
 
-`pytest -q`: 29 tests on synthetic data, no project zip needed. CI runs them on every push.
+`pytest -q`: 30 tests on synthetic data, no project zip needed. CI runs them on every push.
 They cover `reliability`, `features`, `dataset`, `model`, `edge_cases`, and an end-to-end run
 of every CLI command (including `baseline`) on a fake project with the real file layout. They
 don't check predictions against the real model; that's the `baseline` command above.
