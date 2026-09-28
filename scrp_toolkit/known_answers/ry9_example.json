@@ -1,0 +1,10 @@
+[
+  {
+    "question": "ry9",
+    "x": [40, 52, 7, 14],
+    "y": [9, 17, 54, 12],
+    "expected_shape": 9.9705,
+    "expected_rate": 20.9264,
+    "label": "ry9 worked example -- Murat's notebook run on the real EXP002 model (printed to 4 dp)"
+  }
+]

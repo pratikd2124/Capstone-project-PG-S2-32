@@ -1,0 +1,21 @@
+name: tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Run unit tests
+        run: pytest -q
+        # These tests run entirely on synthetic data (see tests/), so no project zip / secrets
+        # are needed here. They do NOT check predictions against the real ONNX model -- that's
+        # what `scrp_toolkit.cli validate` (run locally, against the real data) is for.

@@ -1,0 +1,7 @@
+# Customer data must stay byte-identical to Box (the baseline checks SHA-1).
+# Never let git convert line endings in it (Windows core.autocrlf would otherwise change the files).
+data/** -text
+*.onnx binary
+*.RData binary
+*.csv -text
+*.json -text

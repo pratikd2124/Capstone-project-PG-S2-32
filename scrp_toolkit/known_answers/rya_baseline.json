@@ -1,0 +1,432 @@
+{
+  "_source": "RYA baseline. Inputs = the customer's Box folder 'Statistical Core Refinement Project' (ID 410147109037), pinned by the SHA-1 Box reports for each file. Model = shipped EXP002 ONNX (not retrained). Preprocessing = port of RYA's net_dataset_init_B.py, proven by the 'scaling' section. Sections ry9_example / case_study / dataset are filled by `baseline --capture` on the verified files.",
+  "files": {
+    "EXP002_nn_optimal_epoch.onnx": "2b1f9641a03092724e74b5453df12c2e90dfc18d",
+    "EXP002.json": "12855238dc50639ebd25e06666a3c8dac1d19c8e",
+    "unreliability-matrices.json": "53bd3400d41ba20eea7ca4dd744ebed830328532",
+    "orthog_B_1_feature_output_df.csv": "6ae6ae37120dc7393abd331d3d8dc8fbac4b0bb1",
+    "orthog_B_2_feature_output_df.csv": "d98b974356703f830c77468d6cf75aba83a7a6b5",
+    "orthog_B_3_large_classes_feature_output_df.csv": "b5cb41792da80f0f812dd050fb55153aa570e53c",
+    "orthog_B_4_feature_output_df.csv": "ca1f06a36c3880cccdd96472467f79d8695afee5",
+    "RY25_PreMay10.csv": "50f78fa65249af024a0e77a3949e72203b233332",
+    "RY25_PostMay10.csv": "83ecb5a2eef4b25c297a71c39c5fc584fb2ed0f0"
+  },
+  "check_scaling": true,
+  "_captured": "Outputs recorded by `scrp_toolkit.cli baseline --capture` after files + scaling passed.",
+  "explore": {
+    "n_items": 59,
+    "n_four_option_items": 53,
+    "top_asymm": {
+      "sun12": 0.045383,
+      "ry13": 0.036367,
+      "sun11": 0.03595,
+      "ry9": 0.030717,
+      "ry15": 0.029467,
+      "cop1": 0.027067,
+      "ry8": 0.024233,
+      "ry10": 0.023567,
+      "ry24": 0.022467,
+      "ry2": 0.021417
+    },
+    "atol": 1e-06
+  },
+  "model": {
+    "describe": "Model: 20 layers, width 256, 40 features, P_transform='all_P_asymm'"
+  },
+  "ry9_example": {
+    "question": "ry9",
+    "x": [
+      40,
+      52,
+      7,
+      14
+    ],
+    "y": [
+      9,
+      17,
+      54,
+      12
+    ],
+    "shape": 9.97047561,
+    "rate": 20.92644697,
+    "gamma_mean": 0.47645334,
+    "atol": 1e-06
+  },
+  "case_study": {
+    "school": "f7a2542b55bd29aa76cdf00c77805491",
+    "n_items_scored": 40,
+    "atol": 1e-06,
+    "items": [
+      {
+        "question": "ry16",
+        "n_pre": 656,
+        "n_post": 123,
+        "shape_hat": 4.70618132,
+        "rate_hat": 58.23170052,
+        "gamma_mean": 0.0808182,
+        "asymm": 0.0006
+      },
+      {
+        "question": "ry10",
+        "n_pre": 656,
+        "n_post": 123,
+        "shape_hat": 3.32814776,
+        "rate_hat": 57.66425837,
+        "gamma_mean": 0.05771596,
+        "asymm": 0.02356667
+      },
+      {
+        "question": "phq4",
+        "n_pre": 388,
+        "n_post": 67,
+        "shape_hat": 1.65624936,
+        "rate_hat": 36.76533851,
+        "gamma_mean": 0.04504921,
+        "asymm": 0.00855
+      },
+      {
+        "question": "ry25",
+        "n_pre": 388,
+        "n_post": 67,
+        "shape_hat": 1.6532176,
+        "rate_hat": 38.27623102,
+        "gamma_mean": 0.04319176,
+        "asymm": 0.0046
+      },
+      {
+        "question": "ry20",
+        "n_pre": 388,
+        "n_post": 67,
+        "shape_hat": 1.61119913,
+        "rate_hat": 42.57303943,
+        "gamma_mean": 0.03784553,
+        "asymm": 0.00823333
+      },
+      {
+        "question": "ry6",
+        "n_pre": 656,
+        "n_post": 123,
+        "shape_hat": 2.34317477,
+        "rate_hat": 62.47845894,
+        "gamma_mean": 0.03750372,
+        "asymm": 0.01556667
+      },
+      {
+        "question": "ry2",
+        "n_pre": 656,
+        "n_post": 123,
+        "shape_hat": 2.12475119,
+        "rate_hat": 59.76237973,
+        "gamma_mean": 0.03555332,
+        "asymm": 0.02141667
+      },
+      {
+        "question": "ry22",
+        "n_pre": 656,
+        "n_post": 123,
+        "shape_hat": 2.11402494,
+        "rate_hat": 63.69291658,
+        "gamma_mean": 0.0331909,
+        "asymm": 0.00888333
+      },
+      {
+        "question": "phq7",
+        "n_pre": 388,
+        "n_post": 67,
+        "shape_hat": 1.50045432,
+        "rate_hat": 47.17900959,
+        "gamma_mean": 0.03180343,
+        "asymm": 0.00548333
+      },
+      {
+        "question": "ry8",
+        "n_pre": 656,
+        "n_post": 123,
+        "shape_hat": 2.14688937,
+        "rate_hat": 67.87187531,
+        "gamma_mean": 0.0316315,
+        "asymm": 0.02423333
+      },
+      {
+        "question": "ry17",
+        "n_pre": 656,
+        "n_post": 123,
+        "shape_hat": 2.13589865,
+        "rate_hat": 68.5134327,
+        "gamma_mean": 0.03117489,
+        "asymm": 0.02128333
+      },
+      {
+        "question": "phq3",
+        "n_pre": 388,
+        "n_post": 67,
+        "shape_hat": 1.45045728,
+        "rate_hat": 47.57519188,
+        "gamma_mean": 0.03048768,
+        "asymm": 0.00678333
+      },
+      {
+        "question": "ry9",
+        "n_pre": 388,
+        "n_post": 67,
+        "shape_hat": 1.60229488,
+        "rate_hat": 55.04383518,
+        "gamma_mean": 0.02910943,
+        "asymm": 0.03071667
+      },
+      {
+        "question": "ry7",
+        "n_pre": 388,
+        "n_post": 67,
+        "shape_hat": 1.59912108,
+        "rate_hat": 55.50712512,
+        "gamma_mean": 0.02880929,
+        "asymm": 0.01511667
+      },
+      {
+        "question": "ry26",
+        "n_pre": 656,
+        "n_post": 123,
+        "shape_hat": 1.9442515,
+        "rate_hat": 67.79418661,
+        "gamma_mean": 0.02867873,
+        "asymm": 0.0165
+      },
+      {
+        "question": "cop2",
+        "n_pre": 656,
+        "n_post": 123,
+        "shape_hat": 1.80660291,
+        "rate_hat": 66.84710622,
+        "gamma_mean": 0.0270259,
+        "asymm": 0.01251667
+      },
+      {
+        "question": "ry5",
+        "n_pre": 656,
+        "n_post": 123,
+        "shape_hat": 1.84533494,
+        "rate_hat": 68.9680393,
+        "gamma_mean": 0.02675638,
+        "asymm": 0.01386667
+      },
+      {
+        "question": "ry15",
+        "n_pre": 656,
+        "n_post": 123,
+        "shape_hat": 1.8998086,
+        "rate_hat": 74.73375986,
+        "gamma_mean": 0.02542102,
+        "asymm": 0.02946667
+      },
+      {
+        "question": "ph2",
+        "n_pre": 656,
+        "n_post": 123,
+        "shape_hat": 1.7558712,
+        "rate_hat": 71.85048609,
+        "gamma_mean": 0.02443785,
+        "asymm": 0.00433333
+      },
+      {
+        "question": "ry13",
+        "n_pre": 656,
+        "n_post": 123,
+        "shape_hat": 1.86740946,
+        "rate_hat": 78.96001777,
+        "gamma_mean": 0.02365006,
+        "asymm": 0.03636667
+      },
+      {
+        "question": "sun3",
+        "n_pre": 656,
+        "n_post": 123,
+        "shape_hat": 1.84493332,
+        "rate_hat": 78.2098381,
+        "gamma_mean": 0.02358953,
+        "asymm": 0.0039
+      },
+      {
+        "question": "for1",
+        "n_pre": 656,
+        "n_post": 123,
+        "shape_hat": 1.65392289,
+        "rate_hat": 70.48763256,
+        "gamma_mean": 0.02346402,
+        "asymm": 0.01105
+      },
+      {
+        "question": "ry18",
+        "n_pre": 656,
+        "n_post": 123,
+        "shape_hat": 1.82772725,
+        "rate_hat": 83.11550319,
+        "gamma_mean": 0.02199021,
+        "asymm": 0.0072
+      },
+      {
+        "question": "ph1",
+        "n_pre": 656,
+        "n_post": 123,
+        "shape_hat": 1.6132954,
+        "rate_hat": 79.67556854,
+        "gamma_mean": 0.02024831,
+        "asymm": 0.00796667
+      },
+      {
+        "question": "ry28",
+        "n_pre": 656,
+        "n_post": 123,
+        "shape_hat": 1.75620915,
+        "rate_hat": 87.24838145,
+        "gamma_mean": 0.02012885,
+        "asymm": 0.00506667
+      },
+      {
+        "question": "ry3",
+        "n_pre": 656,
+        "n_post": 123,
+        "shape_hat": 1.69616667,
+        "rate_hat": 85.14556805,
+        "gamma_mean": 0.01992079,
+        "asymm": 0.01178333
+      },
+      {
+        "question": "phq5",
+        "n_pre": 656,
+        "n_post": 123,
+        "shape_hat": 1.57368666,
+        "rate_hat": 81.01086171,
+        "gamma_mean": 0.01942563,
+        "asymm": 0.00271667
+      },
+      {
+        "question": "cop4",
+        "n_pre": 656,
+        "n_post": 123,
+        "shape_hat": 1.62759216,
+        "rate_hat": 84.03373487,
+        "gamma_mean": 0.01936832,
+        "asymm": 0.00811667
+      },
+      {
+        "question": "ry31",
+        "n_pre": 656,
+        "n_post": 123,
+        "shape_hat": 1.63949879,
+        "rate_hat": 86.36257628,
+        "gamma_mean": 0.0189839,
+        "asymm": 0.0099
+      },
+      {
+        "question": "ph3",
+        "n_pre": 656,
+        "n_post": 123,
+        "shape_hat": 1.66959105,
+        "rate_hat": 88.02273519,
+        "gamma_mean": 0.01896773,
+        "asymm": 0.00776667
+      },
+      {
+        "question": "ry29",
+        "n_pre": 656,
+        "n_post": 123,
+        "shape_hat": 1.55760709,
+        "rate_hat": 85.54450551,
+        "gamma_mean": 0.01820815,
+        "asymm": 0.01673333
+      },
+      {
+        "question": "ry30",
+        "n_pre": 656,
+        "n_post": 123,
+        "shape_hat": 1.6387788,
+        "rate_hat": 90.81825718,
+        "gamma_mean": 0.0180446,
+        "asymm": 0.00841667
+      },
+      {
+        "question": "cop3",
+        "n_pre": 656,
+        "n_post": 123,
+        "shape_hat": 1.58660223,
+        "rate_hat": 89.31573027,
+        "gamma_mean": 0.01776397,
+        "asymm": 0.0209
+      },
+      {
+        "question": "ry4",
+        "n_pre": 656,
+        "n_post": 123,
+        "shape_hat": 1.65129276,
+        "rate_hat": 96.28550587,
+        "gamma_mean": 0.01714996,
+        "asymm": 0.01038333
+      },
+      {
+        "question": "ry14",
+        "n_pre": 656,
+        "n_post": 123,
+        "shape_hat": 1.64257462,
+        "rate_hat": 97.05975515,
+        "gamma_mean": 0.01692333,
+        "asymm": 0.01325
+      },
+      {
+        "question": "cop1",
+        "n_pre": 656,
+        "n_post": 123,
+        "shape_hat": 1.50665497,
+        "rate_hat": 89.49757117,
+        "gamma_mean": 0.01683459,
+        "asymm": 0.02706667
+      },
+      {
+        "question": "ry27",
+        "n_pre": 656,
+        "n_post": 123,
+        "shape_hat": 1.59775459,
+        "rate_hat": 95.05444761,
+        "gamma_mean": 0.01680884,
+        "asymm": 0.01191667
+      },
+      {
+        "question": "ry21",
+        "n_pre": 656,
+        "n_post": 123,
+        "shape_hat": 1.60673721,
+        "rate_hat": 96.35416302,
+        "gamma_mean": 0.01667533,
+        "asymm": 0.01031667
+      },
+      {
+        "question": "ry11",
+        "n_pre": 656,
+        "n_post": 123,
+        "shape_hat": 1.50038085,
+        "rate_hat": 105.58802277,
+        "gamma_mean": 0.01420976,
+        "asymm": 0.01598333
+      },
+      {
+        "question": "ph4",
+        "n_pre": 656,
+        "n_post": 123,
+        "shape_hat": 1.50123307,
+        "rate_hat": 113.13021113,
+        "gamma_mean": 0.01326996,
+        "asymm": 0.00385
+      }
+    ]
+  },
+  "dataset": {
+    "split_seed": 42,
+    "train_frac": 0.8,
+    "n_rows": 61155,
+    "n_train": 48924,
+    "n_test": 12231,
+    "exp002_shape_mae": 0.37904525,
+    "exp002_rate_mae": 1.93312305,
+    "mae_atol": 1e-06
+  }
+}

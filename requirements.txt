@@ -1,0 +1,15 @@
+# SCRP toolkit -- tested with Python 3.11 (conda env "scrp"), see README > Setup
+# Core pipeline
+numpy>=1.24
+pandas>=2.0
+torch>=2.0            # model architecture + training experiments (CPU build is enough)
+onnxruntime>=1.16     # runs RYA's shipped EXP002_nn_optimal_epoch.onnx
+matplotlib>=3.7       # plots
+seaborn>=0.12         # plots
+rdata>=0.11           # reads RYA's P.RData (walkthrough Step 3b)
+# Tests
+pytest>=7.4
+onnx>=1.15            # tests export a small fake model; RYA's real model is only read
+# Walkthrough notebook (walkthrough.ipynb)
+notebook>=7.0
+ipykernel>=6.0

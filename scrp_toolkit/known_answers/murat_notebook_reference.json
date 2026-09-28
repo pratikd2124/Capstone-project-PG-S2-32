@@ -1,0 +1,182 @@
+{
+  "_source": "Murat's Colab run of Statistical_Core_Refinement_Project_EN.ipynb (saved outputs). REFERENCE ONLY -- not the RYA baseline. Edited: 6-option items (chs1-chs6) removed because the 4-option EXP002 model cannot score them (his values for them were invalid); item-count and dataset checks removed because his preprocessing followed net_dataset_init.py (no rate rescaling), not RYA's net_dataset_init_B.py. d_hat_mean renamed gamma_mean.",
+  "explore": {
+    "n_items": 59,
+    "top_asymm": {
+      "sun12": 0.045383,
+      "ry13": 0.036367,
+      "sun11": 0.03595,
+      "ry9": 0.030717,
+      "ry15": 0.029467,
+      "cop1": 0.027067,
+      "ry8": 0.024233,
+      "ry10": 0.023567,
+      "ry24": 0.022467,
+      "ry2": 0.021417
+    },
+    "atol": 1e-06
+  },
+  "model": {
+    "describe": "Model: 20 layers, width 256, 40 features, P_transform='all_P_asymm'"
+  },
+  "ry9_example": {
+    "question": "ry9",
+    "x": [
+      40,
+      52,
+      7,
+      14
+    ],
+    "y": [
+      9,
+      17,
+      54,
+      12
+    ],
+    "shape": 9.9705,
+    "rate": 20.9264,
+    "atol": 0.0001,
+    "gamma_mean": 0.4765
+  },
+  "case_study": {
+    "school": "f7a2542b55bd29aa76cdf00c77805491",
+    "atol": 1e-05,
+    "items": [
+      {
+        "question": "ry16",
+        "n_pre": 656,
+        "n_post": 123,
+        "shape_hat": 4.706181,
+        "rate_hat": 58.231701,
+        "gamma_mean": 0.080818,
+        "asymm": 0.0006
+      },
+      {
+        "question": "ry10",
+        "n_pre": 656,
+        "n_post": 123,
+        "shape_hat": 3.328148,
+        "rate_hat": 57.664261,
+        "gamma_mean": 0.057716,
+        "asymm": 0.023567
+      },
+      {
+        "question": "phq4",
+        "n_pre": 388,
+        "n_post": 67,
+        "shape_hat": 1.656249,
+        "rate_hat": 36.765339,
+        "gamma_mean": 0.045049,
+        "asymm": 0.00855
+      },
+      {
+        "question": "ry25",
+        "n_pre": 388,
+        "n_post": 67,
+        "shape_hat": 1.653218,
+        "rate_hat": 38.276234,
+        "gamma_mean": 0.043192,
+        "asymm": 0.0046
+      },
+      {
+        "question": "ry20",
+        "n_pre": 388,
+        "n_post": 67,
+        "shape_hat": 1.611199,
+        "rate_hat": 42.57304,
+        "gamma_mean": 0.037846,
+        "asymm": 0.008233
+      },
+      {
+        "question": "ry29",
+        "n_pre": 656,
+        "n_post": 123,
+        "shape_hat": 1.557607,
+        "rate_hat": 85.54451,
+        "gamma_mean": 0.018208,
+        "asymm": 0.016733
+      },
+      {
+        "question": "ry30",
+        "n_pre": 656,
+        "n_post": 123,
+        "shape_hat": 1.638779,
+        "rate_hat": 90.81826,
+        "gamma_mean": 0.018045,
+        "asymm": 0.008417
+      },
+      {
+        "question": "cop3",
+        "n_pre": 656,
+        "n_post": 123,
+        "shape_hat": 1.586602,
+        "rate_hat": 89.315727,
+        "gamma_mean": 0.017764,
+        "asymm": 0.0209
+      },
+      {
+        "question": "ry4",
+        "n_pre": 656,
+        "n_post": 123,
+        "shape_hat": 1.651293,
+        "rate_hat": 96.285507,
+        "gamma_mean": 0.01715,
+        "asymm": 0.010383
+      },
+      {
+        "question": "ry14",
+        "n_pre": 656,
+        "n_post": 123,
+        "shape_hat": 1.642575,
+        "rate_hat": 97.059753,
+        "gamma_mean": 0.016923,
+        "asymm": 0.01325
+      },
+      {
+        "question": "cop1",
+        "n_pre": 656,
+        "n_post": 123,
+        "shape_hat": 1.506655,
+        "rate_hat": 89.497574,
+        "gamma_mean": 0.016835,
+        "asymm": 0.027067
+      },
+      {
+        "question": "ry27",
+        "n_pre": 656,
+        "n_post": 123,
+        "shape_hat": 1.597755,
+        "rate_hat": 95.054451,
+        "gamma_mean": 0.016809,
+        "asymm": 0.011917
+      },
+      {
+        "question": "ry21",
+        "n_pre": 656,
+        "n_post": 123,
+        "shape_hat": 1.606737,
+        "rate_hat": 96.354164,
+        "gamma_mean": 0.016675,
+        "asymm": 0.010317
+      },
+      {
+        "question": "ry11",
+        "n_pre": 656,
+        "n_post": 123,
+        "shape_hat": 1.500381,
+        "rate_hat": 105.58802,
+        "gamma_mean": 0.01421,
+        "asymm": 0.015983
+      },
+      {
+        "question": "ph4",
+        "n_pre": 656,
+        "n_post": 123,
+        "shape_hat": 1.501233,
+        "rate_hat": 113.130211,
+        "gamma_mean": 0.01327,
+        "asymm": 0.00385
+      }
+    ]
+  }
+}

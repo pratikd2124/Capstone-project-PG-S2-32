@@ -1,0 +1,8 @@
+[project]
+name = "scrp-toolkit"
+version = "0.1.0"
+description = "Statistical Core Refinement Project — cleaned-up pipeline (PG-S2-32)"
+requires-python = ">=3.10"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
