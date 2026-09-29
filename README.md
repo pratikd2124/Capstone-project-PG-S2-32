@@ -39,8 +39,7 @@ Recreates RYA's Gemfinder baseline from the customer's Box files, using the ship
 
 **Notebook and docs**
 - `walkthrough.ipynb`: Steps 1–9, each one compared side by side with Box
-- `docs/findings.md`: recorded values, differences from Murat's notebook, data issues, open questions for RYA
-- `docs/team_demo_script.md`: 10-minute team demo
+- `docs/findings.md`: recorded values, data issues, open questions for RYA
 
 **Tests**
 - `tests/`: 33 tests on synthetic data (`pytest -q`); `.github/workflows/tests.yml` runs them in CI
