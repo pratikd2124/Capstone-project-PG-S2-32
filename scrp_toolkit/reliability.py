@@ -1,6 +1,13 @@
-"""P-matrix (reliability matrix) loading and asymmetry scoring.
+"""The unreliability matrices, and how lopsided each one is.
 
-Identical logic to the original ``misc_functions.asymm_calc`` / the notebook's Section 1.
+Students don't always give the same answer when asked the same question twice. For each survey
+item, RYA measured this as a matrix P: row j is how a student who "really" belongs in answer j
+actually spreads their answers across 1..4. A perfectly reliable item would have 1s on the
+diagonal and 0s elsewhere.
+
+The ``asymm`` score summarises how lopsided the matrix is: whether students drift more one way
+than the other. It's one of the model's 40 inputs. The maths is exactly RYA's ``asymm_calc``
+from misc_functions.py (walkthrough Step 3 runs both side by side).
 """
 from __future__ import annotations
 
@@ -11,34 +18,36 @@ from typing import Dict
 import numpy as np
 import pandas as pd
 
+# The six pairs of cells above/below the diagonal of a 4x4 matrix (counting from 0).
 _PAIRS = [(0, 1), (0, 2), (0, 3), (1, 2), (1, 3), (2, 3)]
 
 
 def asymm_calc(P: np.ndarray) -> float:
-    """Mean squared asymmetry of the off-diagonal cells of a 4x4 reliability matrix.
+    """How lopsided a matrix is: the average of (P[i, j] - P[j, i])^2 over the six pairs.
 
-    The more dominant the diagonal (P close to 1 on it) the more consistent the item;
-    a larger asymm score means a noisier / less reliable item.
+    0 means perfectly symmetric (students drift equally both ways); bigger means they tend to
+    drift in one direction. Note: for the 6-option chs items this only looks at the top-left
+    4x4 corner, just like RYA's version, so it isn't meaningful for them.
     """
     return sum((P[i, j] - P[j, i]) ** 2 for i, j in _PAIRS) / len(_PAIRS)
 
 
 def load_p_matrices(pmatrices_path: str | Path) -> Dict[str, np.ndarray]:
-    """Load ``unreliability-matrices.json`` and return {question: 4x4 numpy array}."""
+    """Read unreliability-matrices.json into {item code: matrix}."""
     with open(pmatrices_path) as f:
         raw = json.load(f)
     return {q: np.array(P) for q, P in raw.items()}
 
 
 def score_asymmetry(p_matrices: Dict[str, np.ndarray]) -> pd.Series:
-    """Return a Series of asymm scores per question, sorted descending (noisiest first)."""
+    """The asymm score of every item, most lopsided first."""
     scores = {q: asymm_calc(P) for q, P in p_matrices.items()}
     return pd.Series(scores, name="asymm").sort_values(ascending=False)
 
 
 def plot_asymmetry_bar(asymm_series: pd.Series, ax=None, top_n: int | None = None):
-    """Bar chart of asymm scores per item. Returns the matplotlib Axes."""
-    import matplotlib.pyplot as plt
+    """Bar chart of asymm scores, optionally just the top ``top_n`` items."""
+    import matplotlib.pyplot as plt   # imported here so the rest of the module works without it
 
     series = asymm_series if top_n is None else asymm_series.head(top_n)
     if ax is None:
@@ -50,7 +59,7 @@ def plot_asymmetry_bar(asymm_series: pd.Series, ax=None, top_n: int | None = Non
 
 
 def plot_p_matrix_heatmap(P: np.ndarray, title: str = "", ax=None):
-    """Heatmap of a single 4x4 reliability matrix. Returns the matplotlib Axes."""
+    """Heatmap of one matrix, laid out like the images in Box's Heatmaps/NonTimeReversed folder."""
     import matplotlib.pyplot as plt
     import seaborn as sns
 

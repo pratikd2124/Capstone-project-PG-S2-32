@@ -1,9 +1,10 @@
-"""Locate the project's data files inside an extracted (or already-unzipped) project folder.
+"""Finding the customer's data files on disk.
 
-This replaces the Colab-specific "upload a zip / mount Google Drive" cell with a plain,
-local-filesystem version: point PROJECT_ROOT at wherever the "Statistical Core Refinement
-Project" folder (or its unzipped contents) lives on disk, and everything else is found
-automatically regardless of the internal folder structure.
+RYA's original scripts had file paths from their own laptops written into them
+(/Users/liam/...), so they only ran there. This module replaces all of that: give it one
+folder (by default the repo's ``data/``, see ``settings.py``) and it finds each file by its
+name, however the sub-folders inside are arranged. That's why a straight Box download works
+as well as the repo layout.
 """
 from __future__ import annotations
 
@@ -14,26 +15,27 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
+from . import settings
 
-REPO_DIR = Path(__file__).resolve().parent.parent
-"""The repository root (the folder containing README.md)."""
+# Kept here as well because other modules and the tests import it from config.
+REPO_DIR = settings.REPO_DIR
 
 
 def default_project_root() -> str:
-    """Where the customer's data lives unless told otherwise.
+    """The data folder to use when a command isn't given one.
 
-    1. the ``SCRP_DATA`` environment variable, if set;
-    2. otherwise ``<repo>/data`` -- the folder shipped inside the team git repo.
+    Comes from settings.py, so it follows the usual order: the SCRP_DATA environment
+    variable, then your local_settings.py, then the repo's own ./data folder.
     """
-    return os.environ.get("SCRP_DATA") or str(REPO_DIR / "data")
+    return str(settings.DATA_DIR)
 
 
 class ProjectFileNotFound(FileNotFoundError):
-    """Raised when a required project file/folder cannot be located under PROJECT_ROOT."""
+    """A file or folder the pipeline needs isn't anywhere under the data folder."""
 
 
 def extract_zip(zip_path: str | os.PathLike, dest: str | os.PathLike) -> Path:
-    """Extract ``zip_path`` into ``dest`` (created if needed) and return ``dest`` as a Path."""
+    """Unzip ``zip_path`` into ``dest`` (creating it if needed) and return ``dest``."""
     dest = Path(dest)
     dest.mkdir(parents=True, exist_ok=True)
     with zipfile.ZipFile(zip_path, "r") as zf:
@@ -42,7 +44,7 @@ def extract_zip(zip_path: str | os.PathLike, dest: str | os.PathLike) -> Path:
 
 
 def find_file(pattern: str, root: str | os.PathLike) -> str:
-    """Find a file by name anywhere under ``root``, regardless of folder structure."""
+    """Return the first file called ``pattern`` anywhere under ``root``."""
     matches = glob.glob(os.path.join(str(root), "**", pattern), recursive=True)
     if not matches:
         raise ProjectFileNotFound(f"No file matching '{pattern}' was found under {root}.")
@@ -50,8 +52,11 @@ def find_file(pattern: str, root: str | os.PathLike) -> str:
 
 
 def find_dir(dirname: str, root: str | os.PathLike) -> str:
-    """Find a directory by name anywhere under ``root``, regardless of folder structure."""
-    def norm(name: str) -> str:  # "Instance data" (Box download) == "instance_data" (original)
+    """Return the first folder called ``dirname`` anywhere under ``root``.
+
+    Names are compared loosely, so Box's "Instance data" matches RYA's "instance_data".
+    """
+    def norm(name: str) -> str:
         return name.lower().replace(" ", "_").replace("-", "_")
 
     for dirpath, dirnames, _filenames in os.walk(root):
@@ -62,12 +67,11 @@ def find_dir(dirname: str, root: str | os.PathLike) -> str:
 
 @dataclass
 class ProjectPaths:
-    """Resolved paths to the project's data files.
+    """Where each of the project's files was found.
 
-    Only ``root`` and ``pmatrices_path`` are guaranteed. Everything else is best-effort: a
-    command that needs one of the optional paths and finds it ``None`` should raise its own
-    clear error (see ``ProjectPaths.require``) rather than every command failing up-front just
-    because, say, the ONNX model isn't needed for that command.
+    Only the matrices file is required, because every command uses it. The rest are optional
+    so that, for example, ``explore`` still works on a folder without the ONNX model. A command
+    that does need one of them calls ``require()`` and gets a clear message if it's missing.
     """
 
     root: str
@@ -80,10 +84,11 @@ class ProjectPaths:
 
     @property
     def have_ry25_data(self) -> bool:
+        """True when both RY25 survey files (before and after) were found."""
         return self.pre_csv_path is not None and self.post_csv_path is not None
 
     def require(self, *fields: str) -> None:
-        """Raise a clear ``ProjectFileNotFound`` if any of the named fields resolved to None."""
+        """Stop with a readable error if any of the named files weren't found."""
         missing = [f for f in fields if getattr(self, f, None) is None]
         if missing:
             raise ProjectFileNotFound(
@@ -93,13 +98,10 @@ class ProjectPaths:
 
 
 def resolve_project_paths(project_root: str | os.PathLike, zip_path: Optional[str | os.PathLike] = None) -> ProjectPaths:
-    """Resolve every file the pipeline might need, starting from ``project_root``.
+    """Look for every file the pipeline might need under ``project_root``.
 
-    If ``project_root`` doesn't exist (or is empty) and ``zip_path`` is given, the zip is
-    extracted into ``project_root`` first. Only ``unreliability-matrices.json`` is required
-    here (every command needs it); the ONNX model, its metadata, instance_data/, and the RY25
-    CSVs are each resolved best-effort so that commands which don't need one of them (e.g.
-    ``explore`` never touches the ONNX model) don't fail just because it's missing.
+    If the folder doesn't exist yet (or is empty) and a zip is given, the zip is unpacked
+    there first.
     """
     project_root = str(project_root)
     if zip_path and (not os.path.isdir(project_root) or not os.listdir(project_root)):
@@ -110,8 +112,10 @@ def resolve_project_paths(project_root: str | os.PathLike, zip_path: Optional[st
             f"PROJECT_ROOT '{project_root}' does not exist. Pass --project-root, or --zip to extract one."
         )
 
+    # The one file every command needs: without it, stop straight away.
     pmatrices_path = find_file("unreliability-matrices.json", project_root)
 
+    # Everything else is looked up quietly and left as None if it isn't there.
     def _optional_file(pattern: str) -> Optional[str]:
         try:
             return find_file(pattern, project_root)
@@ -127,9 +131,9 @@ def resolve_project_paths(project_root: str | os.PathLike, zip_path: Optional[st
     return ProjectPaths(
         root=project_root,
         pmatrices_path=pmatrices_path,
-        onnx_path=_optional_file("EXP002_nn_optimal_epoch.onnx"),
-        metadata_path=_optional_file("EXP002.json"),
-        instance_dir=_optional_dir("instance_data"),
-        pre_csv_path=_optional_file("RY25_PreMay10.csv"),
-        post_csv_path=_optional_file("RY25_PostMay10.csv"),
+        onnx_path=_optional_file("EXP002_nn_optimal_epoch.onnx"),   # the trained network
+        metadata_path=_optional_file("EXP002.json"),                 # its settings + scaling values
+        instance_dir=_optional_dir("instance_data"),                 # the training data
+        pre_csv_path=_optional_file("RY25_PreMay10.csv"),            # real survey, before
+        post_csv_path=_optional_file("RY25_PostMay10.csv"),          # real survey, after
     )

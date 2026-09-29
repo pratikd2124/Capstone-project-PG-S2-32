@@ -1,24 +1,18 @@
-"""Generate edge-case data for stress-testing the pipeline and training a "is this safe?" detector.
+"""Unusual inputs, for testing the pipeline and training an "is this input safe?" detector.
 
-Two kinds of edge cases are produced, matching the two places bad input can hit the pipeline:
+The model gives a number for almost anything you feed it, including inputs it was never
+trained on. This module creates the awkward cases so we can see what happens, and so
+SIN-WEI's detector can learn to catch them. Two kinds:
 
-1. **Response-count edge cases** (``generate_response_count_cases``): unusual Pre/Post count
-   pairs (x, y) fed straight into ``features.extract_features`` / ``inference.predict``, e.g. a
-   single respondent, everyone picking the same option, a category nobody picked at all, or a
-   complete reversal between Pre and Post. These are for regression/robustness testing of the
-   feature pipeline itself (does it divide by zero, does it silently produce NaN/inf, does it
-   crash) -- run them through ``scrp_toolkit.cli validate`` or the pipeline directly.
+1. Unusual answer counts (``generate_response_count_cases``): e.g. a single student, everyone
+   giving the same answer, an empty group, an item that doesn't exist. Running these through the
+   feature code shows which ones crash and which ones quietly produce NaN.
 
-2. **Instance-data-schema edge cases** (``generate_instance_data_rows``): synthetic rows in the
-   same shape as the real ``instance_data/*.csv`` files (P_matrix, P_matrix_question, exp_code,
-   shape, rate, plus the raw X/Y features), but with deliberately extreme or degenerate
-   P-matrices (identity, uniform/maximally noisy, near-singular, fully asymmetric). These are
-   labelled bad-input examples for SIN-WEI's "is this safe?" detector (labels are written to a
-   separate file, keyed by ``exp_code``). They are NOT training data for the regressor -- their
-   shape/rate values are placeholders.
+2. Made-up training-data rows with extreme matrices (``generate_instance_data_rows``): perfectly
+   reliable, completely random, heavily one-directional, or nearly degenerate. They come with a
+   separate labels file, so the detector can be trained on real rows (label 0) vs these (label 1).
 
-Every case is deterministic given a seed, so the same edge-case set can be regenerated and
-diffed later rather than silently drifting between runs.
+Everything is generated from a fixed seed, so the same files come out every time.
 """
 from __future__ import annotations
 
@@ -33,26 +27,28 @@ import numpy as np
 import pandas as pd
 
 # ---------------------------------------------------------------------------
-# 1. Response-count edge cases (x, y, question) -> feed straight into the pipeline
+# 1. Unusual answer counts, fed straight into the feature code
 # ---------------------------------------------------------------------------
 
 
 @dataclass
 class ResponseCountCase:
+    """One unusual input: before (x) and after (y) answer counts for an item."""
+
     label: str
     description: str
     x: List[int]
     y: List[int]
     question: str = "ry9"
-    expect_failure: bool = False  # True = this case is expected to raise / be rejected, not silently score
+    expect_failure: bool = False  # True: this input is invalid and should be rejected, not scored
 
 
 def generate_response_count_cases(question: str = "ry9") -> List[ResponseCountCase]:
-    """A fixed catalogue of edge cases for Pre/Post response-count pairs.
+    """A fixed list of unusual before/after answer counts.
 
-    Covers: zero-variance responses, a single respondent, an unpicked category, complete
-    reversal between measurements, wildly mismatched Pre/Post sample sizes, and the
-    genuinely-invalid case of an empty count vector.
+    Covers: everyone giving the same answer, a single student, an answer nobody picked, a full
+    reversal, very different group sizes, and two inputs that are simply invalid (an empty group
+    and an item that doesn't exist).
     """
     return [
         ResponseCountCase(
@@ -99,12 +95,11 @@ def generate_response_count_cases(question: str = "ry9") -> List[ResponseCountCa
 
 
 def check_response_count_cases(cases: List[ResponseCountCase], p_matrices: Dict[str, np.ndarray]) -> pd.DataFrame:
-    """Run every case through ``features.extract_features`` and report what actually happened.
+    """Run every case through the feature code and record what actually happened.
 
-    This is the "safety net" check: does the case behave the way ``expect_failure`` says it
-    should? A row where ``expect_failure`` doesn't match ``raised`` is worth a look -- either the
-    pipeline needs an explicit guard (for the empty-group / unknown-question cases), or a case
-    marked ``expect_failure=True`` is stricter than it needs to be.
+    For each case: did it raise an error, did it quietly produce NaN or infinity, and was that
+    what we expected? A mismatch means either the code needs a guard, or the detector has to
+    catch that input before it reaches the model.
     """
     from .features import extract_features
 
@@ -131,17 +126,16 @@ def check_response_count_cases(cases: List[ResponseCountCase], p_matrices: Dict[
 
 
 # ---------------------------------------------------------------------------
-# 2. Instance-data-schema edge cases -> synthetic rows for the "is this safe?" detector
+# 2. Made-up training-data rows with extreme matrices, for the "is this input safe?" detector
 # ---------------------------------------------------------------------------
 
 _R_ROW_ORDER = "row-major, matches misc_functions.R_matrix_to_np (P.reshape(4,4).T)"
 
 
 def _matrix_to_r_string(P: np.ndarray) -> str:
-    """Inverse of dataset._r_matrix_to_features: turn a 4x4 array into an R-style 'c(...)' string.
+    """Write a 4x4 matrix back out as R's "c(...)" text: the reverse of reading it in dataset.py.
 
-    dataset._r_matrix_to_features does ``P = arr.reshape(4, 4).T``, so to round-trip a matrix P
-    back to the string that would reproduce it, we transpose before flattening.
+    R lists matrices column by column, so the matrix is transposed before flattening.
     """
     flat = P.T.flatten()
     return "c(" + ", ".join(f"{v:.6f}" for v in flat) + ")"
@@ -149,6 +143,8 @@ def _matrix_to_r_string(P: np.ndarray) -> str:
 
 @dataclass
 class EdgeCaseMatrixSpec:
+    """One kind of extreme matrix: a name, a plain-English description and how to build it."""
+
     label: str
     description: str
     build: "callable"  # () -> np.ndarray, a 4x4 row-stochastic matrix
@@ -205,25 +201,21 @@ _EDGE_MATRIX_SPECS: List[EdgeCaseMatrixSpec] = [
 
 
 def generate_instance_data_rows(n_per_case: int = 20, seed: int = 0) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """Synthesize ``instance_data``-schema rows built around deliberately extreme P-matrices.
+    """Made-up training-data rows built around extreme matrices, for the detector.
 
-    Returns ``(rows, labels)``:
+    Returns two tables:
 
-    * ``rows`` has exactly the columns of the real ``instance_data/*.csv`` files -- every raw
-      feature ``features.extract_features`` produces (except the P_*/asymm ones, which
-      ``dataset.build_preprocessed_dataset`` re-derives from ``P_matrix``), plus P_matrix,
-      P_matrix_question, exp_code, shape, rate. No extra columns: an extra column would be NaN
-      for every real row after a concat, and ``build_preprocessed_dataset`` calls ``dropna()``,
-      which would then silently delete the entire real dataset.
-    * ``labels`` maps each ``exp_code`` to its scenario, for use as the detector's label column.
+    rows    in exactly the same columns as the real instance_data CSVs. No extra columns, on
+            purpose: an extra column would be empty for real rows, and the data preparation
+            drops rows with empty values, so mixing the two would silently wipe out the real
+            data. (That happened in an early version; a test now guards against it.)
+    labels  exp_code -> which scenario each row belongs to: the detector's answer key.
 
-    ``exp_code`` values are strings (``edge_<label>_<n>``), matching the real data's
-    ``orthog_B_1_1``-style codes -- mixing int and str codes makes the dedup step's
-    ``np.unique`` raise.
+    exp_codes are text like "edge_near_singular_3", matching the real "orthog_B_1_1" style;
+    mixing text and number codes breaks the de-duplication step.
 
-    ``shape``/``rate`` here are placeholders, not true unreliability values. Do NOT put these
-    rows in ``instance_data/`` for regressor training -- they'd corrupt its targets. They're for
-    the bad-input detector, trained on real rows (label 0) + these rows (label 1).
+    The shape/rate values are placeholders. Never put these rows in instance_data/ for
+    training the model itself: they are only for teaching the detector what "bad" looks like.
     """
     from .features import extract_features
 
@@ -253,7 +245,7 @@ def generate_instance_data_rows(n_per_case: int = 20, seed: int = 0) -> tuple[pd
 
 
 # ---------------------------------------------------------------------------
-# CLI
+# Command line (usually run via: python -m scrp_toolkit.cli gen-edge-cases)
 # ---------------------------------------------------------------------------
 
 

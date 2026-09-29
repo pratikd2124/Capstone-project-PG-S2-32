@@ -1,31 +1,22 @@
-"""Command-line entry point for the whole pipeline.
+"""The command-line tool: one entry point for everything in the toolkit.
 
-Examples
---------
-    # Section 1: explore reliability matrices
-    python -m scrp_toolkit.cli explore --project-root ./data   # (optional: defaults to <repo>/data) --top-n 10
+Run from the repo root (in the Anaconda Prompt, after ``conda activate scrp``):
 
-    # Section 2 + 2b: score a single example, and (if RY25 CSVs are present) a case-study school
-    python -m scrp_toolkit.cli score --project-root ./data --out ry25_case_study_scores.csv
+    python -m scrp_toolkit.cli baseline          # the full check against RYA (359 checks)
+    python -m scrp_toolkit.cli explore           # the most lopsided unreliability matrices
+    python -m scrp_toolkit.cli score             # RYA's example + a real RY25 school
+    python -m scrp_toolkit.cli validate --known-answers scrp_toolkit/known_answers/ry9_example.json
+    python -m scrp_toolkit.cli gen-edge-cases --check-response-cases
+    python -m scrp_toolkit.cli train --quick-demo      # experiments only: train a fresh network
+    python -m scrp_toolkit.cli compare --quick-demo    # experiments only: fresh network vs EXP002
 
-    # Section 3: train a fresh network from instance_data/
-    python -m scrp_toolkit.cli train --project-root ./data --quick-demo
+Where the data is, where reports go, and the worked example all come from settings.py (or
+your local_settings.py). ``--project-root`` overrides the data folder for a single run.
 
-    # Section 4: compare a freshly-trained network against the shipped EXP002 model
-    python -m scrp_toolkit.cli compare --project-root ./data --quick-demo
-
-    # Regression-check the ONNX model's predictions against known_answers/*.json
-    python -m scrp_toolkit.cli validate --project-root ./data --known-answers known_answers/ry9_example.json
-    python -m scrp_toolkit.cli validate --project-root ./data --known-answers known_answers/ry9_example.json --capture
-
-    # RYA baseline: verify files (SHA-1), preprocessing (EXP002 scaling) and every output
-    python -m scrp_toolkit.cli baseline --project-root ./data
-    python -m scrp_toolkit.cli baseline --project-root ./data --capture scrp_toolkit/known_answers/rya_baseline.json
-    python -m scrp_toolkit.cli baseline --project-root ./data --baseline scrp_toolkit/known_answers/murat_notebook_reference.json
-
-    # Generate edge-case data (response-count cases + instance_data-schema rows for a
-    # bad-input detector), and check the response-count cases against the real pipeline
-    python -m scrp_toolkit.cli gen-edge-cases --project-root ./data --check-response-cases
+Less common:
+    baseline --skip-dataset                    quicker: skips rebuilding the training data
+    baseline --baseline <file.json>            compare against another recorded baseline
+    baseline --capture <file.json>             record a new baseline (only if the inputs are RYA's)
 """
 from __future__ import annotations
 
@@ -36,18 +27,21 @@ from pathlib import Path
 
 import numpy as np
 
+from . import settings
 from .config import default_project_root, resolve_project_paths
 from .reliability import load_p_matrices, score_asymmetry
 from .validate import ValidationCase, load_known_answers, print_report, validate
 
 
 def _add_common_args(p: argparse.ArgumentParser) -> None:
+    """The two options every data-reading command accepts."""
     p.add_argument("--project-root", default=None,
-                   help="Folder containing the customer's data files (default: $SCRP_DATA, else <repo>/data)")
+                   help="Folder containing the customer's data files (default: DATA_DIR in settings.py)")
     p.add_argument("--zip", default=None, help="Optional zip to extract into --project-root first")
 
 
 def cmd_explore(args: argparse.Namespace) -> int:
+    """List the items whose unreliability matrices are most lopsided."""
     paths = resolve_project_paths(args.project_root, args.zip)
     p_matrices = load_p_matrices(paths.pmatrices_path)
     scores = score_asymmetry(p_matrices)
@@ -58,6 +52,7 @@ def cmd_explore(args: argparse.Namespace) -> int:
 
 
 def cmd_score(args: argparse.Namespace) -> int:
+    """Score RYA's worked example, then every item for the RY25 case-study school."""
     from .inference import UnreliabilityPredictor
     from .scoring import score_school
 
@@ -65,10 +60,11 @@ def cmd_score(args: argparse.Namespace) -> int:
     predictor = UnreliabilityPredictor(paths)
     print(predictor.describe())
 
-    x_example = np.array([40, 52, 7, 14])
-    y_example = np.array([9, 17, 54, 12])
-    shape_hat, rate_hat = predictor.predict(x_example, y_example, "ry9")
-    print(f"\nSingle example (item ry9): shape={shape_hat:.4f}  rate={rate_hat:.4f}  gamma_mean={shape_hat / rate_hat:.4f}")
+    x_example = np.array(settings.EXAMPLE_PRE)
+    y_example = np.array(settings.EXAMPLE_POST)
+    shape_hat, rate_hat = predictor.predict(x_example, y_example, settings.EXAMPLE_ITEM)
+    print(f"\nSingle example (item {settings.EXAMPLE_ITEM}): shape={shape_hat:.4f}  rate={rate_hat:.4f}  "
+          f"gamma_mean={shape_hat / rate_hat:.4f}")
 
     if paths.have_ry25_data:
         scores = score_school(predictor, paths)
@@ -83,6 +79,7 @@ def cmd_score(args: argparse.Namespace) -> int:
 
 
 def cmd_train(args: argparse.Namespace) -> int:
+    """Train a fresh network (experiments only; the baseline never trains)."""
     from .train import TrainConfig, train_from_instance_data
 
     paths = resolve_project_paths(args.project_root, args.zip)
@@ -99,6 +96,7 @@ def cmd_train(args: argparse.Namespace) -> int:
 
 
 def cmd_compare(args: argparse.Namespace) -> int:
+    """Train a fresh network, then compare its errors with RYA's EXP002 on the same rows."""
     from .compare import compare_against_exp002
     from .inference import UnreliabilityPredictor
     from .train import TrainConfig, train_from_instance_data
@@ -123,6 +121,7 @@ def cmd_compare(args: argparse.Namespace) -> int:
 
 
 def cmd_validate(args: argparse.Namespace) -> int:
+    """Quick PASS/FAIL against a small file of known answers (or re-record it with --capture)."""
     from .inference import UnreliabilityPredictor
 
     paths = resolve_project_paths(args.project_root, args.zip)
@@ -130,7 +129,7 @@ def cmd_validate(args: argparse.Namespace) -> int:
     cases = load_known_answers(args.known_answers)
 
     if args.capture:
-        # Run the model now and overwrite the file with the current output as the new baseline.
+        # Overwrite the file with what the model gives today. Only do this deliberately.
         captured = []
         for case in cases:
             shape_hat, rate_hat = predictor.predict(np.array(case.x), np.array(case.y), case.question)
@@ -148,6 +147,7 @@ def cmd_validate(args: argparse.Namespace) -> int:
 
 
 def cmd_baseline(args: argparse.Namespace) -> int:
+    """The full comparison with RYA. Exits with 1 if any check fails."""
     from .baseline import (RYA_BASELINE, capture_baseline, check_against_baseline,
                            load_baseline, print_summary, report_frame)
 
@@ -179,6 +179,7 @@ def cmd_baseline(args: argparse.Namespace) -> int:
 
 
 def cmd_gen_edge_cases(args: argparse.Namespace) -> int:
+    """Write the edge-case files for the input-safety detector (see edge_cases.py)."""
     from . import edge_cases
 
     gen_argv = ["--out-dir", args.out_dir, "--n-per-case", str(args.n_per_case), "--seed", str(args.seed)]
@@ -190,49 +191,50 @@ def cmd_gen_edge_cases(args: argparse.Namespace) -> int:
 
 
 def build_parser() -> argparse.ArgumentParser:
+    """Define every command and its options (this is what --help shows)."""
     parser = argparse.ArgumentParser(prog="scrp_toolkit", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = parser.add_subparsers(dest="command", required=True)
 
-    p = sub.add_parser("explore", help="Section 1: reliability-matrix asymmetry ranking")
+    p = sub.add_parser("explore", help="The most lopsided unreliability matrices")
     _add_common_args(p)
     p.add_argument("--top-n", type=int, default=10)
     p.set_defaults(func=cmd_explore)
 
-    p = sub.add_parser("score", help="Section 2/2b: single example + case-study school scoring")
+    p = sub.add_parser("score", help="RYA's worked example + every item for a real RY25 school")
     _add_common_args(p)
     p.add_argument("--out", default=None, help="CSV path to save the case-study school's scores")
     p.set_defaults(func=cmd_score)
 
-    p = sub.add_parser("train", help="Section 3: train a fresh Net from instance_data/")
+    p = sub.add_parser("train", help="Experiments only: train a fresh network")
     _add_common_args(p)
     p.add_argument("--quick-demo", action="store_true", help="15 epochs instead of the original 1000")
-    p.add_argument("--save-model", default=None, help="Path to save the trained state_dict")
+    p.add_argument("--save-model", default=None, help="Path to save the trained weights")
     p.set_defaults(func=cmd_train)
 
-    p = sub.add_parser("compare", help="Section 4: freshly-trained Net vs shipped EXP002 ONNX model")
+    p = sub.add_parser("compare", help="Experiments only: a fresh network vs RYA's EXP002")
     _add_common_args(p)
     p.add_argument("--quick-demo", action="store_true", help="15 epochs instead of the original 1000")
     p.set_defaults(func=cmd_compare)
 
-    p = sub.add_parser("validate", help="Regression-check ONNX predictions against known_answers/*.json")
+    p = sub.add_parser("validate", help="Quick PASS/FAIL against a small file of known answers")
     _add_common_args(p)
     p.add_argument("--known-answers", required=True)
     p.add_argument("--rel-tol", type=float, default=0.01)
     p.add_argument("--capture", action="store_true", help="Overwrite --known-answers with today's output")
     p.set_defaults(func=cmd_validate)
 
-    p = sub.add_parser("baseline", help="RYA baseline: file SHA-1s, EXP002 scaling, and every output; PASS/FAIL per check")
+    p = sub.add_parser("baseline", help="The full check against RYA: files, scaling and every output")
     _add_common_args(p)
     p.add_argument("--baseline", default=None, help="Baseline JSON (default: known_answers/rya_baseline.json)")
-    p.add_argument("--report", default="baseline_report.csv", help="CSV with one row per check")
-    p.add_argument("--skip-dataset", action="store_true", help="Skip the scaling + dataset sections (the slow instance_data rebuild)")
+    p.add_argument("--report", default=str(settings.REPORT_CSV), help="CSV with one row per check (default: REPORT_CSV in settings.py)")
+    p.add_argument("--skip-dataset", action="store_true", help="Skip the scaling + dataset sections (the slow part)")
     p.add_argument("--capture", default=None, metavar="OUT_JSON", help="Record a full baseline (only if files + scaling pass) to OUT_JSON")
     p.set_defaults(func=cmd_baseline)
 
-    p = sub.add_parser("gen-edge-cases", help="Generate edge-case data (response-count cases + instance_data-schema rows)")
+    p = sub.add_parser("gen-edge-cases", help="Edge-case files for the input-safety detector")
     p.add_argument("--project-root", default=None, help="Needed only with --check-response-cases")
     p.add_argument("--zip", default=None)
-    p.add_argument("--out-dir", default="edge_cases")
+    p.add_argument("--out-dir", default=str(settings.EDGE_CASE_DIR), help="default: EDGE_CASE_DIR in settings.py")
     p.add_argument("--n-per-case", type=int, default=20)
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--check-response-cases", action="store_true")
@@ -244,6 +246,7 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
+    # No --project-root given: use the data folder from settings.py.
     if getattr(args, "project_root", "unset") is None and args.command != "gen-edge-cases":
         args.project_root = default_project_root()
     return args.func(args)

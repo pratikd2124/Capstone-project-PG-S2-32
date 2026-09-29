@@ -1,11 +1,12 @@
-"""Minimal, dependency-free reader for R's serialized .rds / single-object .RData files.
+"""Reading RYA's R data file (P.RData) without installing anything extra.
 
-Written for RYA's ``P.RData`` (the unreliability matrices used by their R simulation): a named
-list of numeric matrices, gzip-compressed, R serialization version 2 or 3. It supports only
-what such files contain -- lists, numeric/integer/logical/character vectors, attributes (names,
-dim), symbols and references -- and raises a clear error on anything else.
+RYA's R simulation kept its copy of the unreliability matrices in P.RData. Walkthrough Step 3b
+compares it with the JSON copy the model uses. The usual Python package for R files (rdata)
+couldn't be installed on some of our machines, so this is a small reader of our own.
 
-This replaces the optional ``rdata`` package, which some networks block pip from installing.
+It understands just what P.RData contains: a list of number matrices with names, in R's
+standard compressed binary format. Anything else gets a clear error rather than a wrong answer.
+On P.RData it gives exactly the same result as the rdata package (checked when it was written).
 """
 from __future__ import annotations
 
@@ -22,6 +23,7 @@ _NIL, _SYM, _LIST, _CHAR, _LGL, _INT, _REAL, _STR, _VEC = 0, 1, 2, 9, 10, 13, 14
 
 
 def _decompress(raw: bytes) -> bytes:
+    """R files are usually gzip-compressed; handle the other formats R can use too."""
     if raw[:2] == b"\x1f\x8b":
         return gzip.decompress(raw)
     if raw[:3] == b"BZh":
@@ -32,6 +34,8 @@ def _decompress(raw: bytes) -> bytes:
 
 
 class _Reader:
+    """Walks through R's binary format one object at a time."""
+
     def __init__(self, data: bytes):
         self.b, self.i, self.refs = data, 0, []
 
@@ -46,6 +50,7 @@ class _Reader:
         return v
 
     def header(self) -> None:
+        """Check the file starts like a binary R file, and skip the version information."""
         fmt = self.raw(2)
         if fmt != b"X\n":
             raise ValueError(f"Only XDR (binary) R serialization is supported, got {fmt!r}.")
@@ -57,6 +62,7 @@ class _Reader:
             raise ValueError(f"Unsupported R serialization version {version}.")
 
     def item(self):
+        """Read the next R object: its type is in the low 8 bits of a flags number."""
         flags = self.int()
         typ = flags & 0xFF
         has_attr, has_tag = bool(flags & (1 << 9)), bool(flags & (1 << 10))
@@ -103,6 +109,7 @@ class _Reader:
 
 
 def _apply_attrs(value, attrs: dict):
+    """Give a vector its shape (dim) or turn a list into a dict (names), as R would."""
     dim = attrs.get("dim")
     if dim is not None and isinstance(value, np.ndarray):
         value = value.reshape(tuple(int(d) for d in dim), order="F")    # R is column-major

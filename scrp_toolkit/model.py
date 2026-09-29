@@ -1,8 +1,14 @@
-"""The network architecture and the Gamma-KL divergence loss used to train it.
+"""The network design and the loss it was trained with.
 
-Identical to ``net_dataset_init.py``'s ``Net`` class and ``misc_functions.K`` / ``misc_functions.KL``.
-Kept free of any training-loop or dataset code so it can be imported without pulling in torch's
-DataLoader machinery (e.g. from inference-adjacent code, or tests).
+``Net`` is RYA's network, copied from net_dataset_init_B.py: a straight stack of fully
+connected layers with ReLU in between, ending in two outputs (scaled shape and scaled rate).
+EXP002 uses 40 inputs, 20 layers and 256 units per layer, about 1.26 million numbers in
+total. Walkthrough Step 7 loads the trained weights from the ONNX file into this class and
+gets identical outputs, which proves it's the same network.
+
+``K`` and ``KL`` are RYA's training loss from misc_functions.py: how far the predicted Gamma
+distribution is from the true one. They're only needed for (re)training experiments. Using
+RYA's model as-is doesn't need them.
 """
 from __future__ import annotations
 
@@ -15,19 +21,21 @@ import torch.nn as nn
 
 
 class Net(nn.Module):
-    """Identical to the original ``net_dataset_init.py`` -> ``Net`` class.
+    """RYA's network: ``n_layers`` layers of ``width`` units, ``n_features`` in, 2 out.
 
-    A stack of ``n_layers`` linear+ReLU blocks of width ``width``, mapping ``n_features``
-    inputs to 2 outputs (normalised shape, rate of the predicted Gamma unreliability).
+    The layer names (linear1, relu1, ..., linear_out) match RYA's exactly, so saved weights
+    from their code load straight in.
     """
 
     def __init__(self, n_features: int, n_layers: int, width: int):
         super().__init__()
+        # Layers 2..n: width -> width, each followed by a ReLU.
         inner_layers_list = [
             [(f"linear{l}", nn.Linear(width, width)), (f"relu{l}", nn.ReLU())]
             for l in range(2, n_layers + 1)
         ]
         inner_layers_list = [i for i in chain.from_iterable(inner_layers_list)]
+        # First layer takes the inputs; the last layer gives the two outputs.
         od = OrderedDict(
             [("linear1", nn.Linear(n_features, width)), ("relu1", nn.ReLU())]
             + inner_layers_list
@@ -40,7 +48,11 @@ class Net(nn.Module):
 
 
 def K(shape_1: torch.Tensor, rate_1: torch.Tensor, shape_2: torch.Tensor, rate_2: torch.Tensor) -> torch.Tensor:
-    """Identical to ``misc_functions.K``: one component of the KL divergence between two Gammas."""
+    """One piece of the distance between two Gamma distributions (RYA's ``K``).
+
+    Negative inputs are made positive here so the logs don't fail. Those cases are
+    replaced by a separate penalty in ``KL`` anyway.
+    """
     shape_1 = torch.abs(shape_1)
     rate_1 = torch.abs(rate_1)
     a = 1 / rate_1
@@ -56,11 +68,14 @@ def KL(
     target: torch.Tensor,
     reduce_mean: bool = True,
 ) -> torch.Tensor:
-    """Identical to ``misc_functions.KL``: the training loss (KL divergence between predicted
-    and true Gamma distributions, on the RAW/unnormalised shape-rate scale).
+    """The training loss: how far each predicted Gamma is from the true one (RYA's ``KL``).
 
-    Predictions with a negative (post-rescaling) shape or rate fall back to a squared-error
-    penalty instead of the (undefined) KL divergence.
+    The network works on scaled values (0-1), so both prediction and target are first turned
+    back into real shape/rate using the training min/max. If a prediction comes out negative,
+    which a Gamma can't have, that row gets a squared-error penalty instead, pushing the
+    network back towards sensible values.
+
+    reduce_mean=False returns one loss per row instead of the average.
     """
     srmm = shape_rate_min_max
     shape_p = (srmm["shape_max"] - srmm["shape_min"]) * output[:, 0] + srmm["shape_min"]
@@ -72,6 +87,7 @@ def KL(
     K_pt = K(shape_p, rate_p, shape_t, rate_t)
     K_diff = K_tt - K_pt
 
+    # Replace impossible (negative) predictions with the penalty.
     neg_shape = shape_p < 0
     neg_rate = rate_p < 0
     K_diff = K_diff.clone()

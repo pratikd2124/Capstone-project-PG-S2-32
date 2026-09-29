@@ -1,10 +1,15 @@
-"""From-scratch training loop for the ``Net`` architecture, using the Gamma-KL loss.
+"""Training a fresh network, for experiments only.
 
-Faithful port of the notebook's Section 3 training loop (``train_test_loop.py`` /
-``perform_exp.py``). The shipped EXP002 model was trained with 20 layers, width 256, for
-1000 epochs; QUICK_DEMO trains for far fewer epochs purely so the pipeline can be smoke-tested
-in minutes instead of hours -- see Section 4 / ``compare.py`` for why the demo model is
-expected to under-perform EXP002.
+The baseline never trains anything: it uses RYA's trained EXP002 as it is. This module is for
+teammates who want to retrain or shrink the model (Murat's workstream) and compare the result
+against EXP002 with compare.py.
+
+It follows RYA's training setup (perform_exp.py / train_test_loop.py): the same network,
+loss, optimiser (Adam, learning rate 0.0001) and batch size (64). EXP002 was trained for
+1,000 epochs; ``--quick-demo`` uses 15 so you can check everything runs in a few minutes.
+
+Before a serious retraining run, drop the corrupt training row listed in settings.CORRUPT_ROW
+(see docs/findings.md).
 """
 from __future__ import annotations
 
@@ -16,20 +21,23 @@ import pandas as pd
 import torch
 from torch.utils.data import DataLoader
 
+from . import settings
 from .dataset import DHatTensorDataset, build_preprocessed_dataset, train_test_split_like_original
 from .model import KL, Net
 
 
 @dataclass
 class TrainConfig:
+    """Everything that controls a training run. The defaults are EXP002's settings."""
+
     n_layers: int = 20
     width: int = 256
     learning_rate: float = 1e-4
     num_epochs: int = 1000
     batch_size: int = 64
-    train_frac: float = 0.8
-    random_seed: int = 42
-    device: str | None = None  # None -> auto-detect cuda/cpu
+    train_frac: float = settings.TRAIN_FRAC
+    random_seed: int = settings.SPLIT_SEED
+    device: str | None = None  # None: use the GPU if there is one, otherwise the CPU
 
     def resolve_device(self) -> torch.device:
         if self.device:
@@ -38,6 +46,7 @@ class TrainConfig:
 
 
 def shape_rate_min_max_from(min_max_train_df: pd.DataFrame) -> dict:
+    """Pull the shape and rate min/max out of the scaling table (the loss needs them)."""
     def _get(col, stat):
         return float(min_max_train_df.loc[min_max_train_df["column"] == col, stat].iloc[0])
 
@@ -50,6 +59,10 @@ def shape_rate_min_max_from(min_max_train_df: pd.DataFrame) -> dict:
 
 
 def run_epoch(loader: DataLoader, model: Net, loss_fn, device: torch.device, optimizer=None) -> float:
+    """One pass over the data. Trains if an optimiser is given, otherwise just measures.
+
+    Returns the average loss per row.
+    """
     is_train = optimizer is not None
     model.train() if is_train else model.eval()
     total_loss, n_seen = 0.0, 0
@@ -69,10 +82,10 @@ def run_epoch(loader: DataLoader, model: Net, loss_fn, device: torch.device, opt
 
 
 def train_from_instance_data(instance_dir: str | None, config: TrainConfig | None = None):
-    """End-to-end: build the dataset, train a fresh ``Net``, return everything needed downstream.
+    """Prepare the data, train a new network, and hand back everything you'd want to look at.
 
-    Returns a dict with: model, config, device, feature_columns, min_max_train_df,
-    train_df, test_df, train_loss_history, test_loss_history.
+    Returns a dict with: model, config, device, feature_columns, min_max_train_df, train_df,
+    test_df, train_loss_history, test_loss_history.
     """
     if not instance_dir:
         raise FileNotFoundError(
@@ -104,6 +117,7 @@ def train_from_instance_data(instance_dir: str | None, config: TrainConfig | Non
         test_loss = run_epoch(test_loader, model, loss_fn, device, optimizer=None)
         train_loss_history.append(train_loss)
         test_loss_history.append(test_loss)
+        # Print about 15 progress lines however long the run is.
         log_every = max(1, config.num_epochs // 15)
         if epoch % log_every == 0 or epoch == config.num_epochs - 1:
             print(f"Epoch {epoch + 1:4d}/{config.num_epochs}  train_loss={train_loss:.4f}  test_loss={test_loss:.4f}")
@@ -122,6 +136,7 @@ def train_from_instance_data(instance_dir: str | None, config: TrainConfig | Non
 
 
 def plot_loss_curve(train_loss_history: List[float], test_loss_history: List[float], ax=None):
+    """Training and test loss per epoch, to see whether training is settling or diverging."""
     import matplotlib.pyplot as plt
 
     if ax is None:

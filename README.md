@@ -30,23 +30,35 @@ looks there by default.
 
 ## Settings (one place)
 
-| Where | Setting | Default |
-|---|---|---|
-| `walkthrough.ipynb` → **SETTINGS** cell (top) | `DATA_DIR`, `REPORT_CSV`, `EDGE_CASE_DIR`, `EXAMPLE_ITEM/PRE/POST`, `SPLIT_SEED`, `TRAIN_FRAC`, `CHECK_ALL_TRAINING_ROWS`, `RUN_TRAINING_DEMO`, `CORRUPT_ROW` | repo-relative, works as-is |
-| environment variable `SCRP_DATA` | data folder for **both** the notebook and the CLI | not set → `<repo>/data` |
-| CLI `--project-root` | data folder for one command | `SCRP_DATA`, else `<repo>/data` |
+Every path and choice lives in **`scrp_toolkit/settings.py`**: the data folder, where reports go,
+the worked example, the train/test split, and the notebook switches. The command-line tool, the
+scripts and `walkthrough.ipynb` all read from there, and each setting has a comment saying what
+it does.
 
-To keep the data somewhere else (e.g. a Box Drive folder): `setx SCRP_DATA "D:\path\to\data"`
-once, then reopen the terminal / VS Code.
+**To use your own paths, don't edit `settings.py`** (it's shared). Instead:
+
+1. Copy `local_settings.example.py` to `local_settings.py` (same folder as this README).
+2. Uncomment and change what you need, usually just `DATA_DIR`:
+   ```python
+   DATA_DIR = r"D:\Desktop\Academics\Sem-2-26\Claude\data"
+   ```
+
+`local_settings.py` is ignored by git, so your paths stay on your computer. If the data is in the
+repo's own `data/` folder (the default), you don't need a `local_settings.py` at all.
+
+Priority, highest first: the `SCRP_DATA` environment variable → `local_settings.py` → `settings.py`.
+For a single command you can also pass `--project-root <folder>`.
 
 ## Repository layout
 
 ```
 README.md  requirements.txt  pyproject.toml  walkthrough.ipynb
-scrp_toolkit/            the package (config, reliability, features, inference, scoring, dataset,
-                         model, train, compare, validate, baseline, edge_cases, rds, cli)
+local_settings.example.py  copy to local_settings.py for your own paths (git ignores it)
+scrp_toolkit/            the package: settings (all paths + choices), config, reliability, features,
+                         inference, scoring, dataset, model, train, compare, validate, baseline,
+                         edge_cases, rds, cli. Each file starts with a plain-English summary.
   known_answers/         rya_baseline.json (Box SHA-1s + recorded outputs), murat_notebook_reference.json
-tests/                   30 unit + end-to-end tests on synthetic data (CI runs them on every push)
+tests/                   33 unit + end-to-end tests on synthetic data (CI runs them on every push)
 docs/findings.md         findings, data issues and open questions for RYA
 data/                    the customer's files, in Box's own folder structure (read-only!)
   Final Network w Code (15-07-2022)/final_network_July15_22/
@@ -61,7 +73,7 @@ data/                    the customer's files, in Box's own folder structure (re
 ## Team git workflow
 
 - `main` is the **baseline**: code that passes `python -m scrp_toolkit.cli baseline` (359/359)
-  and `pytest` (30 passed). Nobody commits to it directly.
+  and `pytest` (33 passed). Nobody commits to it directly.
 - Everyone works on their own branch: `shlok`, `murat`, `sin-wei`, `shuyun`, `pratik`
   (already created). Start of each session: `git switch <you>` then `git merge main`.
 - **Never edit `data/` or `scrp_toolkit/known_answers/`.** If you must change the pipeline,
@@ -107,7 +119,7 @@ saving (or Ctrl+Shift+P → "File: Revert File") so the old copy isn't saved ove
 | 6 | `dataset.py` | RYA's own `D_hat_Dataset` (`net_dataset_init_B.py`) run live: reproduces EXP002.json (≤5e-11); ours identical to RYA's (same 48,924 training rows, features and targets) | done |
 | 7 | `model.py` | ONNX weights loaded into our `Net`: identical outputs (0.0), 1,261,058 parameters; `K`/`KL` identical to `misc_functions.py` (0.0) | done |
 | 8 | `scoring.py` | RY25 case-study school: 40 items, identical to the recorded baseline and to Murat's 15 four-option rows | done |
-| 9 | `cli.py`, `baseline.py`, tests, `edge_cases.py` | 359/359 baseline checks, 30/30 tests, 8 edge cases (3 flagged for SIN-WEI) | done |
+| 9 | `cli.py`, `baseline.py`, tests, `edge_cases.py` | 359/359 baseline checks, 33/33 tests, 8 edge cases (3 flagged for SIN-WEI) | done |
 
 Running the whole notebook takes about 5–7 minutes (Restart → Run All).
 
@@ -197,7 +209,7 @@ that step is in RYA's JavaScript, not in Box, so it isn't part of this baseline 
 
 | Command | Expect |
 |---|---|
-| `pytest -q` | `30 passed` (synthetic data; also runs in CI) |
+| `pytest -q` | `33 passed` (synthetic data; also runs in CI) |
 | `validate --known-answers scrp_toolkit/known_answers/ry9_example.json` | `[PASS]` shape `9.9705`, rate `20.9264` |
 | `gen-edge-cases --check-response-cases` | 8 cases; `all_same_option`, `single_respondent`, `empty_group` flagged (known NaN finding) |
 | `train` / `compare --quick-demo` | Runs. Only for training experiments. Not part of the baseline. |
@@ -231,7 +243,7 @@ from the original portal script. The team needs to decide whether to guard it up
 
 ## Testing
 
-`pytest -q`: 30 tests on synthetic data, no project zip needed. CI runs them on every push.
+`pytest -q`: 33 tests on synthetic data, no project zip needed. CI runs them on every push.
 They cover `reliability`, `features`, `dataset`, `model`, `edge_cases`, and an end-to-end run
 of every CLI command (including `baseline`) on a fake project with the real file layout. They
 don't check predictions against the real model; that's the `baseline` command above.

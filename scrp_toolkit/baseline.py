@@ -1,22 +1,23 @@
-"""The RYA baseline: run RYA's own pipeline on RYA's own files and compare every number
-against a saved baseline, flagging each mismatch.
+"""The RYA baseline: proving our copy behaves exactly like RYA's system.
 
-"Identical to RYA" is enforced in three layers, each a section of the report:
+``python -m scrp_toolkit.cli baseline`` runs everything in here and compares the results with
+the numbers recorded in known_answers/rya_baseline.json. Every comparison is one "check" in the
+report. It says PASS or FAIL, and the command exits with an error if anything fails.
 
-files    -- every input file's SHA-1 equals the SHA-1 Box reports for the customer's copy
-            (Box folder "Statistical Core Refinement Project"). A different or edited file fails.
-scaling  -- instance_data/ run through ``dataset.build_preprocessed_dataset`` (a port of RYA's
-            net_dataset_init_B.py) reproduces the min_max_df stored in the customer's
-            EXP002.json, all 42 columns x (min, max). This proves our preprocessing is the one
-            EXP002 was trained with -- the model itself is never retrained.
-outputs  -- the numbers the pipeline produces with the shipped EXP002 ONNX model: P-matrix
-            asymmetry ranking, model summary, the ry9 example, a real RY25 school, and EXP002's
-            error on the instance_data split. These come from ``--capture`` on the verified files.
+The checks come in sections:
 
-Every check is one row of the report (section, check, expected, got, status, note). The
-command exits 1 on any FAIL. ``--capture`` refuses to write a baseline unless the files and
-scaling sections pass, so a baseline can only ever be recorded from the customer's exact
-files and RYA's exact preprocessing.
+    files       each of the 9 input files has exactly the fingerprint (SHA-1) Box reports for
+                the customer's copy. One changed byte, or a stray extra CSV, fails.
+    explore     the matrices file: item count and the 10 most lopsided items
+    model       the model's own description (layers, width, inputs)
+    ry9         RYA's worked example gives the recorded shape and rate
+    case_study  every item for a real RY25 school gives the recorded numbers
+    scaling     our data preparation reproduces the 84 min/max values stored with the model
+                (EXP002.json), which proves we prepare data exactly as RYA did
+    dataset     row counts, and EXP002's error on the fixed train/test split
+
+Recording a new baseline (``--capture``) is only allowed when the files and scaling sections
+pass, so a baseline can only ever come from the customer's files and RYA's preparation.
 """
 from __future__ import annotations
 
@@ -33,13 +34,15 @@ import pandas as pd
 from .config import ProjectPaths
 from .reliability import load_p_matrices, score_asymmetry
 
-RTOL = 1e-5  # float32 ONNX output: allow tiny cross-platform/runtime differences
+# How close is "the same"? The model works in 32-bit numbers, so allow a relative difference of
+# 0.001% for tiny differences between computers and library versions.
+RTOL = 1e-5
 
 KNOWN_ANSWERS = Path(__file__).parent / "known_answers"
 RYA_BASELINE = KNOWN_ANSWERS / "rya_baseline.json"
 MURAT_REFERENCE = KNOWN_ANSWERS / "murat_notebook_reference.json"
 
-# ProjectPaths attribute -> file name, for the SHA-1 manifest
+# Which ProjectPaths field holds each fingerprinted file.
 _PATH_FIELDS = {
     "onnx_path": "EXP002_nn_optimal_epoch.onnx",
     "metadata_path": "EXP002.json",
@@ -51,6 +54,8 @@ _PATH_FIELDS = {
 
 @dataclass
 class Check:
+    """One line of the report: what we expected, what we got, and whether they match."""
+
     section: str
     check: str
     expected: object
@@ -64,6 +69,7 @@ class Check:
 
 
 def _close(got, expected, atol: float, rtol: float = RTOL) -> bool:
+    """True if two numbers agree within the tolerance (False if either isn't a number)."""
     try:
         return bool(np.isclose(float(got), float(expected), rtol=rtol, atol=atol))
     except (TypeError, ValueError):
@@ -71,18 +77,22 @@ def _close(got, expected, atol: float, rtol: float = RTOL) -> bool:
 
 
 def _num(section, name, got, expected, atol, rtol=RTOL) -> Check:
+    """A check that two numbers are close."""
     return Check(section, name, expected, None if got is None else round(float(got), 6), _close(got, expected, atol, rtol))
 
 
 def _eq(section, name, got, expected, note="") -> Check:
+    """A check that two things are exactly equal."""
     return Check(section, name, expected, got, got == expected, note)
 
 
 def _missing(section, name, expected, why) -> Check:
+    """A failed check for something that couldn't be found at all."""
     return Check(section, name, expected, None, False, why)
 
 
 def sha1_of(path: str | Path) -> str:
+    """The file's SHA-1 fingerprint, the same value Box shows for it."""
     h = hashlib.sha1()
     with open(path, "rb") as f:
         for chunk in iter(lambda: f.read(1 << 20), b""):
@@ -91,7 +101,7 @@ def sha1_of(path: str | Path) -> str:
 
 
 def _file_map(paths: ProjectPaths) -> dict:
-    """{file name: local path or None} for every file in the manifest."""
+    """{file name: where it is on this computer (or None)} for every fingerprinted file."""
     files = {name: getattr(paths, field) for field, name in _PATH_FIELDS.items()}
     if paths.instance_dir:
         for p in sorted(Path(paths.instance_dir).glob("*.csv")):
@@ -100,11 +110,12 @@ def _file_map(paths: ProjectPaths) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# Section runners
+# One function per section of the report
 # ---------------------------------------------------------------------------
 
 
 def check_files(paths: ProjectPaths, manifest: dict) -> List[Check]:
+    """Compare every file's fingerprint with the one Box reports."""
     files = _file_map(paths)
     checks = []
     for name, expected_sha1 in manifest.items():
@@ -115,14 +126,15 @@ def check_files(paths: ProjectPaths, manifest: dict) -> List[Check]:
             checks.append(_eq("files", name, sha1_of(local), expected_sha1))
     extra = sorted(n for n in files if n.endswith(".csv") and n not in manifest and files[n]
                    and Path(files[n]).parent == Path(paths.instance_dir or ""))
-    for name in extra:  # a stray CSV in instance_data/ would silently change the training data
+    # An extra CSV in the training-data folder would silently change the training data.
+    for name in extra:
         checks.append(Check("files", name, "not present", "present", False,
                             "extra CSV in instance_data/ -- remove it (e.g. edge-case rows)"))
     return checks
 
 
 def run_scaling(paths: ProjectPaths, metadata: dict, normalise_rate: bool = True):
-    """Rebuild the dataset; return (df, feature_cols, rebuilt_min_max, stored_min_max)."""
+    """Prepare the training data our way, and fetch the min/max RYA stored with the model."""
     from .dataset import build_preprocessed_dataset
 
     df, feature_cols, rebuilt = build_preprocessed_dataset(paths.instance_dir, normalise_rate=normalise_rate)
@@ -131,18 +143,20 @@ def run_scaling(paths: ProjectPaths, metadata: dict, normalise_rate: bool = True
 
 
 def check_scaling(df, feature_cols, rebuilt: pd.DataFrame, stored: pd.DataFrame, metadata: dict) -> List[Check]:
+    """Our min/max for every column vs the ones stored in EXP002.json (84 numbers), plus the order."""
     checks = [_eq("scaling", "feature_order", list(feature_cols), list(metadata["feature_labels"]))]
     r, s = rebuilt.set_index("column"), stored.set_index("column")
     checks.append(_eq("scaling", "columns", list(r.index), list(s.index)))
     for col in s.index:
         for stat in ("min", "max"):
             got = r[stat].get(col) if col in r.index else None
-            # EXP002.json stores values rounded to 10 decimals
+            # EXP002.json stores these rounded to 10 decimal places.
             checks.append(_num("scaling", f"{col}.{stat}", got, s.loc[col, stat], atol=1e-9, rtol=1e-9))
     return checks
 
 
 def run_explore(paths: ProjectPaths, top_n: int = 10) -> dict:
+    """Item counts and the ``top_n`` most lopsided matrices."""
     p = load_p_matrices(paths.pmatrices_path)
     scores = score_asymmetry(p)
     return {"n_items": int(len(p)),
@@ -151,12 +165,14 @@ def run_explore(paths: ProjectPaths, top_n: int = 10) -> dict:
 
 
 def run_ry9(predictor, case: dict) -> dict:
+    """Run the worked example through the model."""
     shape, rate = predictor.predict(np.array(case["x"]), np.array(case["y"]), case["question"])
     return {"question": case["question"], "x": case["x"], "y": case["y"],
             "shape": shape, "rate": rate, "gamma_mean": shape / rate}
 
 
 def run_case_study(predictor, paths: ProjectPaths) -> Optional[pd.DataFrame]:
+    """Score every item for the RY25 case-study school (None if the survey files aren't there)."""
     from .scoring import score_school
 
     if not paths.have_ry25_data:
@@ -165,11 +181,11 @@ def run_case_study(predictor, paths: ProjectPaths) -> Optional[pd.DataFrame]:
 
 
 def run_split_error(predictor, df, feature_cols, min_max_df, seed: int, train_frac: float) -> dict:
-    """EXP002's shape/rate MAE on the ``seed`` test split (no training).
+    """EXP002's average error (shape and rate) on the test rows of a fixed split. No training.
 
-    RYA drew EXP002's split seed with ``np.random.randint(100)`` and never saved it, so this
-    split is NOT EXP002's held-out set -- most of these rows were in its training data. It is a
-    reproducible reference number for comparing changes, not a generalisation score.
+    RYA picked EXP002's split at random and never saved it, so many of these rows were probably
+    in EXP002's own training data. The number is a fixed reference for spotting changes, not a
+    measure of how well EXP002 does on unseen data.
     """
     from .compare import _rescale, mae
     from .dataset import train_test_split_like_original
@@ -186,16 +202,21 @@ def run_split_error(predictor, df, feature_cols, min_max_df, seed: int, train_fr
 
 
 # ---------------------------------------------------------------------------
-# Check / capture
+# Running all the checks, or recording a new baseline
 # ---------------------------------------------------------------------------
 
 
 def _load_metadata(paths: ProjectPaths) -> dict:
+    """Read EXP002.json."""
     with open(paths.metadata_path) as f:
         return json.load(f)
 
 
 def check_against_baseline(paths: ProjectPaths, baseline: dict, include_dataset: bool = True) -> List[Check]:
+    """Run every section the baseline file has numbers for, and return all the checks.
+
+    include_dataset=False skips the slow part (rebuilding the training data).
+    """
     from .inference import UnreliabilityPredictor
 
     checks: List[Check] = []
@@ -212,6 +233,7 @@ def check_against_baseline(paths: ProjectPaths, baseline: dict, include_dataset:
         for q, v in exp["top_asymm"].items():
             checks.append(_num("explore", f"asymm[{q}]", got["top_asymm"].get(q), v, exp["atol"]))
 
+    # Everything after this point needs the model itself.
     if not (paths.onnx_path and paths.metadata_path):
         checks.append(_missing("model", "EXP002 model files", "present",
                                "EXP002_nn_optimal_epoch.onnx / EXP002.json not found -- later sections skipped"))
@@ -269,11 +291,13 @@ def check_against_baseline(paths: ProjectPaths, baseline: dict, include_dataset:
 
 
 def report_frame(checks: List[Check]) -> pd.DataFrame:
+    """All checks as a table: this is what gets saved as baseline_report.csv."""
     return pd.DataFrame([{"section": c.section, "check": c.check, "expected": c.expected,
                           "got": c.got, "status": c.status, "note": c.note} for c in checks])
 
 
 def print_summary(checks: List[Check]) -> bool:
+    """Print one PASS/FAIL line per section, then any mismatches. True if everything passed."""
     df = report_frame(checks)
     fails = df[df["status"] == "FAIL"]
     for section, grp in df.groupby("section", sort=False):
@@ -291,10 +315,10 @@ def print_summary(checks: List[Check]) -> bool:
 
 
 def capture_baseline(paths: ProjectPaths, template: dict) -> dict:
-    """Run everything on verified inputs and return a complete baseline dict.
+    """Record a fresh baseline from the current files (only needed if RYA sends new files).
 
-    Refuses (raises RuntimeError) unless every file matches the template's SHA-1 manifest and
-    the rebuilt scaling matches EXP002.json -- so a captured baseline is always RYA's.
+    Refuses (RuntimeError) unless every file matches Box's fingerprints and our data preparation
+    reproduces EXP002.json, so a recorded baseline is always genuinely RYA's.
     """
     from .inference import UnreliabilityPredictor
 
@@ -303,6 +327,7 @@ def capture_baseline(paths: ProjectPaths, template: dict) -> dict:
     metadata = _load_metadata(paths)
     df, feature_cols, rebuilt, stored = run_scaling(paths, metadata)
     gate += check_scaling(df, feature_cols, rebuilt, stored, metadata)
+    # The gate: don't record anything unless the inputs and the preparation are RYA's.
     bad = [c for c in gate if not c.passed]
     if bad:
         print_summary(gate)
@@ -342,5 +367,6 @@ def capture_baseline(paths: ProjectPaths, template: dict) -> dict:
 
 
 def load_baseline(path: str | Path) -> dict:
+    """Read a baseline file (e.g. known_answers/rya_baseline.json)."""
     with open(path) as f:
         return json.load(f)
