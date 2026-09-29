@@ -6,8 +6,7 @@ much worse than EXP002, which trained for 1,000 epochs. That gap is the point of
 not a bug.
 
 Remember that RYA never saved EXP002's train/test split, so many of these "test" rows were
-probably in EXP002's own training data. Treat EXP002's number as a reference, not a fair
-held-out score.
+probably in EXP002's own training data. We need to treat EXP002's number as a reference, not a fair held-out score.
 """
 from __future__ import annotations
 

@@ -1,7 +1,7 @@
 """SCRP toolkit: RYA's Gemfinder statistical core, as one tested Python package.
 
-RYA's original code (in the customer's Box folder) is a set of R and Python scripts that only
-ran on their own machines. This package does the same job, checked line by line against their
+RYA's original code shared to us is a set of R and Python scripts that only
+ran on their own machines linked to their local files. This package does the same job, checked line by line against their
 code, so the whole team can run it and measure every experiment against the same baseline.
 
 What's in here, roughly in the order the data flows:

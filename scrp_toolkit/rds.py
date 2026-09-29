@@ -23,7 +23,7 @@ _NIL, _SYM, _LIST, _CHAR, _LGL, _INT, _REAL, _STR, _VEC = 0, 1, 2, 9, 10, 13, 14
 
 
 def _decompress(raw: bytes) -> bytes:
-    """R files are usually gzip-compressed; handle the other formats R can use too."""
+    #R files are usually gzip-compressed; handle the other formats R can use too.
     if raw[:2] == b"\x1f\x8b":
         return gzip.decompress(raw)
     if raw[:3] == b"BZh":
@@ -34,8 +34,7 @@ def _decompress(raw: bytes) -> bytes:
 
 
 class _Reader:
-    """Walks through R's binary format one object at a time."""
-
+    #Walks through R's binary format one object at a time.
     def __init__(self, data: bytes):
         self.b, self.i, self.refs = data, 0, []
 
@@ -50,7 +49,7 @@ class _Reader:
         return v
 
     def header(self) -> None:
-        """Check the file starts like a binary R file, and skip the version information."""
+        #Check the file starts like a binary R file, and skip the version information.
         fmt = self.raw(2)
         if fmt != b"X\n":
             raise ValueError(f"Only XDR (binary) R serialization is supported, got {fmt!r}.")
@@ -62,7 +61,7 @@ class _Reader:
             raise ValueError(f"Unsupported R serialization version {version}.")
 
     def item(self):
-        """Read the next R object: its type is in the low 8 bits of a flags number."""
+        #Read the next R object: its type is in the low 8 bits of a flags number.
         flags = self.int()
         typ = flags & 0xFF
         has_attr, has_tag = bool(flags & (1 << 9)), bool(flags & (1 << 10))
@@ -109,7 +108,7 @@ class _Reader:
 
 
 def _apply_attrs(value, attrs: dict):
-    """Give a vector its shape (dim) or turn a list into a dict (names), as R would."""
+    #Give a vector its shape (dim) or turn a list into a dict (names), as R would.
     dim = attrs.get("dim")
     if dim is not None and isinstance(value, np.ndarray):
         value = value.reshape(tuple(int(d) for d in dim), order="F")    # R is column-major
@@ -120,7 +119,7 @@ def _apply_attrs(value, attrs: dict):
 
 
 def read_rds(path: str | Path):
-    """Read one R object from an .rds / single-object .RData file."""
+    #Read one R object from an .rds / single-object .RData file.
     r = _Reader(_decompress(Path(path).read_bytes()))
     r.header()
     return r.item()

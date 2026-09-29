@@ -105,10 +105,14 @@ def plot_scores_bar(scores: pd.DataFrame, ax=None):
     """Bar chart of gamma_mean for every scored item."""
     import matplotlib.pyplot as plt
 
+    n = len(scores)
     if ax is None:
-        _fig, ax = plt.subplots(figsize=(12, 6))
-    colors = plt.cm.viridis(np.linspace(0, 1, len(scores)))
-    ax.bar(scores["question"], scores["gamma_mean"], color=colors)
+        _fig, ax = plt.subplots(figsize=(max(16, 0.7 * n), 6))
+    colors = plt.cm.viridis(np.linspace(0, 1, n))
+    ax.bar(range(n), scores["gamma_mean"], color=colors)
+    ax.set_xticks(range(n))
+    ax.set_xticklabels(scores["question"], rotation=0, fontsize=8)
+    ax.margins(x=0.01)
     ax.set_ylabel("Mean of predicted Gamma (shape / rate)")
     ax.set_title("Mean of the predicted d-hat Gamma per item, case-study school")
     return ax

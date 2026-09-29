@@ -46,7 +46,7 @@ def test_known_bad_cases_are_flagged_by_the_safety_check():
     # Zero-variance / single-respondent cases are realistic inputs (not "expect_failure"), but the
     # underlying feature pipeline currently produces NaN for them rather than a real number --
     # this is the known finding this generator exists to surface. If this ever starts passing,
-    # the upstream 0/0 guard was added -- update this test (and the README note) accordingly.
+    # the upstream 0/0 guard was added -- update this test (and the note in docs/findings.md) accordingly.
     all_same = report[report["label"] == "all_same_option"].iloc[0]
     assert all_same["produced_nan"]
     assert not all_same["matches_expectation"]

@@ -21,6 +21,7 @@ Source of truth: Box folder "Statistical Core Refinement Project" (ID 4101471090
 2. chs1-6 are 6-option items; EXP002 takes 4x4 only. Now rejected/skipped.
 3. EXP002's split seed was random and unsaved, so there is no true held-out set.
 4. The Gamma(shape, rate) is the distribution of the d-hat test statistic between two groups, not an item unreliability score.
+5. inference.py reverse-normalises in float64 like RYA's reverse_normalise (was float32, ~5e-7 off). Baseline re-recorded after this fix.
 
 ## Unreliability matrices (Step 3)
 - Loaded from RYA, not recomputed: the re-test data used to estimate them is not in Box.
@@ -40,3 +41,9 @@ Source of truth: Box folder "Statistical Core Refinement Project" (ID 4101471090
 4. sun1 / ry17 row 2 col 1: which value is correct, JSON (0.07 / 0.09) or RData (0.08)?
 5. Can RYA share the re-test data and script used to estimate the matrices?
 6. Is the portal aware of the corrupt training row / should groups under 5 students be blocked?
+
+## For the team
+- Training instability (Murat): in the notebook's saved run, epoch-15 loss jumped to 36.63 train / 4.55 test after sitting near 0.6. Re-check after the rate-rescaling fix.
+- NaN on zero-variance input (SIN-WEI / Shuyun): guard upstream (stdev == 0) or have the detector catch it.
+- Edge cases: `edge_case_instance_data.csv` has placeholder targets. Never put it in instance_data/; it is detector data only.
+- Any analysis including chs1-6 must drop them until a 6-option model exists.
