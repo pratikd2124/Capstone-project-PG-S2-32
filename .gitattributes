@@ -5,3 +5,7 @@ data/** -text
 *.RData binary
 *.csv -text
 *.json -text
+
+# Windows batch files need CRLF line endings to run reliably
+*.bat text eol=crlf
+*.sh text eol=lf

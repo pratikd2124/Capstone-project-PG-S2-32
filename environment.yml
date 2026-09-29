@@ -1,0 +1,19 @@
+# SCRP toolkit: the team's Python environment.
+#
+# Create it (once):   conda env create -f environment.yml
+# Update it later:    conda env update -f environment.yml --prune
+# Use it:             conda activate scrp
+#
+# Or just run setup_env.bat (Windows) / setup_env.sh (Mac/Linux), which does all of this
+# and then checks everything works.
+#
+# Conda provides Python 3.11 (the tested version); the packages themselves come from
+# requirements.txt via pip, so there's one list of packages to maintain.
+name: scrp
+channels:
+  - conda-forge
+dependencies:
+  - python=3.11
+  - pip
+  - pip:
+      - -r requirements.txt

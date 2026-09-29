@@ -1,14 +1,23 @@
-# SCRP toolkit -- tested with Python 3.11 (conda env "scrp"), see README > Setup
+# SCRP toolkit: Python packages.
+# Tested together on Python 3.11 (Windows, conda env "scrp"): numpy 2.4, pandas 3.0, torch 2.14 (CPU),
+# onnxruntime 1.30. The ranges below allow bug-fix updates but stop at the next major version,
+# so everyone ends up with versions that behave the same.
+#
+# Easiest install: run setup_env.bat (Windows) or setup_env.sh (Mac/Linux), which uses
+# environment.yml -> this file. Manual install: pip install -r requirements.txt
+
 # Core pipeline
-numpy>=1.24
-pandas>=2.0
-torch>=2.0            # model architecture + training experiments (CPU build is enough)
-onnxruntime>=1.16     # runs RYA's shipped EXP002_nn_optimal_epoch.onnx
-matplotlib>=3.7       # plots
-seaborn>=0.12         # plots
+numpy>=2.0,<3
+pandas>=2.2,<4
+torch>=2.5,<3          # network design + training experiments (the CPU build is enough)
+onnxruntime>=1.20,<2   # runs RYA's trained model (EXP002_nn_optimal_epoch.onnx)
+matplotlib>=3.7,<4     # plots
+seaborn>=0.13,<1       # plots
+
 # Tests
-pytest>=7.4
-onnx>=1.15            # tests export a small fake model; RYA's real model is only read
+pytest>=7.4,<9
+onnx>=1.16,<2          # the tests build a small fake model; RYA's real model is only read
+
 # Walkthrough notebook (walkthrough.ipynb)
-notebook>=7.0
-ipykernel>=6.0
+notebook>=7.0,<8
+ipykernel>=6.0,<8

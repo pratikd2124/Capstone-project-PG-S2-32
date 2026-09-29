@@ -9,16 +9,20 @@ against. **Nothing is retrained.** It has been checked line by line against RYA'
 ## Quick start (every teammate)
 
 1. **Get the repo** (see *Team git workflow* below) and open the folder in VS Code.
-2. **Create the environment once**, in the **Anaconda Prompt**:
+2. **Set up the environment once**: open the **Anaconda Prompt**, go to the repo folder and run
+   the setup script:
    ```bat
-   conda create -n scrp python=3.11 -y
-   conda activate scrp
    cd /d "<path to this repo>"
-   pip install -r requirements.txt
-   python -m ipykernel install --user --name scrp --display-name "Python (scrp)"
+   setup_env.bat
    ```
+   It creates the `scrp` conda environment from `environment.yml` (Python 3.11 plus the packages
+   in `requirements.txt`), registers the notebook kernel **Python (scrp)**, runs the tests and a
+   quick baseline check. It takes about 5–10 minutes the first time. On Mac/Linux use
+   `bash setup_env.sh`. Re-run it any time `requirements.txt` changes: it updates the
+   environment in place.
 3. **Check everything matches RYA** (about 2 minutes):
    ```bat
+   conda activate scrp
    python -m scrp_toolkit.cli baseline
    ```
    Expect `TOTAL: 359/359 checks passed -> BASELINE MATCHES`.
@@ -52,7 +56,11 @@ For a single command you can also pass `--project-root <folder>`.
 ## Repository layout
 
 ```
-README.md  requirements.txt  pyproject.toml  walkthrough.ipynb
+README.md  pyproject.toml  walkthrough.ipynb
+environment.yml          the conda environment "scrp" (Python 3.11 + requirements.txt)
+requirements.txt         the Python packages, with tested version ranges
+requirements-lock.txt    exact tested versions, as a fallback if a newer version ever breaks
+setup_env.bat / .sh      one-command setup + check (Windows / Mac-Linux)
 local_settings.example.py  copy to local_settings.py for your own paths (git ignores it)
 scrp_toolkit/            the package: settings (all paths + choices), config, reliability, features,
                          inference, scoring, dataset, model, train, compare, validate, baseline,

@@ -1,0 +1,13 @@
+# Exact versions from the team's tested setup (29 Sep 2026, Python 3.11, Windows).
+# Normally use requirements.txt (via setup_env.bat). Use this file only if a newer package
+# version ever breaks something:  pip install -r requirements-lock.txt
+numpy==2.4.6
+pandas==3.0.6
+torch==2.14.0
+onnxruntime==1.30.0
+matplotlib==3.11.2
+seaborn==0.13.2
+pytest==8.4.2
+onnx==1.23.0
+notebook==7.6.3
+ipykernel==7.3.0
