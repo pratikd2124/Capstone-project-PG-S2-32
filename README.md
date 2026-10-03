@@ -25,7 +25,7 @@ Recreates RYA's Gemfinder baseline from the customer's Box files, using the ship
 - `config.py`: finds the data files
 - `reliability.py`: unreliability matrices, asymmetry
 - `features.py`: answer counts → the 40 model inputs
-- `inference.py`: runs EXP002 → shape, rate
+- `inference.py`: runs EXP002 → shape, rate (`predict_batch` for many items: same answers, ~60x faster)
 - `scoring.py`: scores every item for one RY25 school
 - `dataset.py`: rebuilds RYA's training data
 - `model.py`: network and loss
@@ -33,6 +33,7 @@ Recreates RYA's Gemfinder baseline from the customer's Box files, using the ship
 - `validate.py`: quick known-answer check
 - `baseline.py`: the full 359-check comparison with RYA
 - `edge_cases.py`: unusual inputs for the safety detector
+- `profiling.py`: where EXP002's time and memory go, projected to 200k predictions
 - `rds.py`: reads RYA's `P.RData`
 - `cli.py`: command line, `python -m scrp_toolkit.cli <command>`
 - `known_answers/`: recorded baseline (`rya_baseline.json`), Murat's reference, ry9 example
@@ -42,7 +43,7 @@ Recreates RYA's Gemfinder baseline from the customer's Box files, using the ship
 - `docs/findings.md`: recorded values, data issues, open questions for RYA
 
 **Tests**
-- `tests/`: 33 tests on synthetic data (`pytest -q`); `.github/workflows/tests.yml` runs them in CI
+- `tests/`: 40 tests on synthetic data (`pytest -q`); `.github/workflows/tests.yml` runs them in CI
 
 **Data: `data/`** (customer's Box files, read-only)
 - `Final Network w Code (15-07-2022)/final_network_July15_22/`: model (`final_network_model/`), training data (`instance_data/`), RYA's code (`final_code/`)
@@ -56,11 +57,12 @@ Recreates RYA's Gemfinder baseline from the customer's Box files, using the ship
 - `score`: ry9 example and the case-study school
 - `validate --known-answers scrp_toolkit/known_answers/ry9_example.json`
 - `gen-edge-cases --check-response-cases`: writes `edge_cases/`
+- `profile`: time and memory per stage and per layer → `profile_report.json`
 - `train --quick-demo`, `compare --quick-demo`: experiments only, not part of the baseline
 
 ## Team rules
 
 - `main` = baseline. Work on your own branch (`shlok`, `murat`, `sin-wei`, `shuyun`, `pratik`) and run `git merge main` at the start of each session.
 - Never edit `data/` or `known_answers/`.
-- Before merging: `pytest -q` (33 passed) and `baseline` (359/359). Attach `baseline_report.csv` to the pull request.
+- Before merging: `pytest -q` (40 passed) and `baseline` (359/359). Attach `baseline_report.csv` to the pull request.
 - The RY25 CSVs are confidential student data. Keep the repo private, and check the RYA/University data agreement before pushing to any cloud host.

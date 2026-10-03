@@ -7,6 +7,7 @@ Run from the repo root (in the Anaconda Prompt, after ``conda activate scrp``):
     python -m scrp_toolkit.cli score             # RYA's example + a real RY25 school
     python -m scrp_toolkit.cli validate --known-answers scrp_toolkit/known_answers/ry9_example.json
     python -m scrp_toolkit.cli gen-edge-cases --check-response-cases
+    python -m scrp_toolkit.cli profile           # where EXP002's time and memory go
     python -m scrp_toolkit.cli train --quick-demo      # experiments only: train a fresh network
     python -m scrp_toolkit.cli compare --quick-demo    # experiments only: fresh network vs EXP002
 
@@ -178,6 +179,20 @@ def cmd_baseline(args: argparse.Namespace) -> int:
     return 0 if ok else 1
 
 
+def cmd_profile(args: argparse.Namespace) -> int:
+    """Where EXP002's time and memory go, projected to --scale predictions."""
+    from .profiling import print_report, run_profile, to_json_dict
+
+    paths = resolve_project_paths(args.project_root, args.zip)
+    paths.require("onnx_path", "metadata_path")
+    result = run_profile(paths, n_cases=args.n_cases, scale=args.scale)
+    print_report(result)
+    if args.out:
+        Path(args.out).write_text(json.dumps(to_json_dict(result), indent=2, default=float))
+        print(f"\nSaved: {args.out}")
+    return 0
+
+
 def cmd_gen_edge_cases(args: argparse.Namespace) -> int:
     """Write the edge-case files for the input-safety detector (see edge_cases.py)."""
     from . import edge_cases
@@ -230,6 +245,13 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--skip-dataset", action="store_true", help="Skip the scaling + dataset sections (the slow part)")
     p.add_argument("--capture", default=None, metavar="OUT_JSON", help="Record a full baseline (only if files + scaling pass) to OUT_JSON")
     p.set_defaults(func=cmd_baseline)
+
+    p = sub.add_parser("profile", help="Where EXP002's time and memory go (Murat's workstream)")
+    _add_common_args(p)
+    p.add_argument("--n-cases", type=int, default=2000, help="Random items to time (default 2000)")
+    p.add_argument("--scale", type=int, default=200_000, help="Predictions to project the cost to")
+    p.add_argument("--out", default=str(settings.PROFILE_JSON), help="JSON report (default: PROFILE_JSON in settings.py)")
+    p.set_defaults(func=cmd_profile)
 
     p = sub.add_parser("gen-edge-cases", help="Edge-case files for the input-safety detector")
     p.add_argument("--project-root", default=None, help="Needed only with --check-response-cases")

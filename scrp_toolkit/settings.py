@@ -41,6 +41,7 @@ DATA_DIR = REPO_DIR / "data"
 
 REPORT_CSV = REPO_DIR / "baseline_report.csv"   # one row per baseline check (`cli baseline`)
 EDGE_CASE_DIR = REPO_DIR / "edge_cases"         # edge-case files for the input-safety detector
+PROFILE_JSON = REPO_DIR / "profile_report.json" # where the model's time and memory go (`cli profile`)
 
 # ---------------------------------------------------------------------------------------------
 # The worked example: RYA's own, from feature_calculation_portal_script.py
@@ -89,7 +90,7 @@ def _load_local_overrides() -> None:
     spec.loader.exec_module(module)
     for name, value in vars(module).items():
         if name.isupper():                      # only settings, not imports or helpers
-            if name.endswith(("_DIR", "_CSV")):
+            if name.endswith(("_DIR", "_CSV", "_JSON")):
                 value = Path(value)             # accept plain strings for paths too
             globals()[name] = value
 

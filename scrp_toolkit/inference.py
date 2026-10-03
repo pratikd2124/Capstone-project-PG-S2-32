@@ -19,15 +19,37 @@ from __future__ import annotations
 import io
 import json
 from pathlib import Path
-from typing import Dict, Tuple
+from typing import Dict, Sequence, Tuple
 
 import numpy as np
 import onnxruntime as ort
 import pandas as pd
 
 from .config import ProjectPaths
-from .features import extract_features
+from .features import extract_features, extract_features_batch
 from .reliability import load_p_matrices
+
+
+def batched_onnx_session(onnx_path: str) -> ort.InferenceSession:
+    """The same ONNX model, but accepting a batch of rows (N x 40) instead of one row.
+
+    RYA's file only takes a single row of 40 numbers, so every item costs a separate call.
+    Only the declared input/output shapes change here; the weights and operations are
+    untouched, and the outputs are identical (tests/test_inference_batch.py).
+    """
+    import onnx   # only needed here; reading RYA's file as-is doesn't need it
+
+    model = onnx.load(onnx_path)
+    for value in (model.graph.input[0], model.graph.output[0]):
+        dims = value.type.tensor_type.shape.dim
+        if len(dims) == 1:
+            last = dims[0].dim_value
+            del dims[:]
+            dims.add().dim_param = "batch"
+            dims.add().dim_value = last
+        else:
+            dims[0].dim_param = "batch"
+    return ort.InferenceSession(model.SerializeToString())
 
 
 class UnreliabilityPredictor:
@@ -55,6 +77,12 @@ class UnreliabilityPredictor:
         # RYA exported EXP002 to take a plain list of 40 numbers. Some re-exports expect a
         # batch of lists instead, so check once which kind this file wants.
         self._expects_batch_dim = len(self.session.get_inputs()[0].shape) == 2
+        self._batch_session = None   # built on first predict_batch call
+
+        # The min/max in feature order, for scaling a whole table at once.
+        labels = self.metadata["feature_labels"]
+        self._min_vec = np.array([self._mins[c] for c in labels], dtype=float)
+        self._max_vec = np.array([self._maxs[c] for c in labels], dtype=float)
 
     def describe(self) -> str:
         """A one-line summary of the model, e.g. for printing at the top of a report."""
@@ -103,3 +131,32 @@ class UnreliabilityPredictor:
         shape_hat = self._reverse_normalise(raw_out[0], "shape")
         rate_hat = self._reverse_normalise(raw_out[1], "rate")
         return float(shape_hat), float(rate_hat)
+
+    def predict_batch(self, x: np.ndarray, y: np.ndarray, questions: Sequence[str],
+                      chunk_size: int = 4096) -> Tuple[np.ndarray, np.ndarray]:
+        """``predict`` for many items at once: arrays of shape and rate, one per row.
+
+        x, y       (N, 4) answer counts, before and after
+        questions  N item codes
+
+        Same answers as calling ``predict`` row by row (tests/test_inference_batch.py), but the
+        features are worked out on whole columns and the network runs ``chunk_size`` rows per
+        call. Use this whenever there's more than a handful of items to score.
+        """
+        labels = self.metadata["feature_labels"]
+        feats = extract_features_batch(x, y, questions, self.p_matrices)[labels].to_numpy()
+        scaled = ((feats - self._min_vec) / (self._max_vec - self._min_vec)).astype(np.float32)
+
+        if self._batch_session is None:
+            self._batch_session = batched_onnx_session(self.paths.onnx_path)
+        in_name = self._batch_session.get_inputs()[0].name
+        raw_out = np.concatenate([
+            self._batch_session.run(None, {in_name: scaled[i:i + chunk_size]})[0]
+            for i in range(0, len(scaled), chunk_size)
+        ]) if len(scaled) else np.empty((0, 2), dtype=np.float32)
+
+        # As in _reverse_normalise: back to 64-bit first, then undo the scaling.
+        raw_out = raw_out.astype(np.float64)
+        shape_hat = (self._maxs["shape"] - self._mins["shape"]) * raw_out[:, 0] + self._mins["shape"]
+        rate_hat = (self._maxs["rate"] - self._mins["rate"]) * raw_out[:, 1] + self._mins["rate"]
+        return shape_hat, rate_hat

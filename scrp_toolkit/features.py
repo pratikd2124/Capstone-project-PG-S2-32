@@ -89,3 +89,69 @@ def extract_features(x: np.ndarray, y: np.ndarray, question: str, p_matrices: Di
         transform_p_matrix(question, p_matrices),
     ]
     return pd.concat(parts)
+
+
+# ---------------------------------------------------------------------------------------------
+# Many items at once
+# ---------------------------------------------------------------------------------------------
+
+def _rowdot(a: np.ndarray, b: np.ndarray) -> np.ndarray:
+    """np.dot of each row of ``a`` with the same row of ``b``.
+
+    Written as a stack of tiny matrix products on purpose: numpy sends these to the same BLAS
+    dot routine as ``np.dot`` on one row, so the result is bit-for-bit what
+    ``moment_calculator`` gives. ``(a * b).sum(axis=1)`` adds in a different order and drifts
+    in the last digit for about a quarter of rows.
+    """
+    a, b = np.broadcast_arrays(a, b)
+    return np.matmul(a[:, None, :], b[:, :, None])[:, 0, 0]
+
+
+def extract_features_batch(x: np.ndarray, y: np.ndarray, questions, p_matrices: Dict[str, np.ndarray]) -> pd.DataFrame:
+    """``extract_features`` for many items at once: one row per item, the same 40 columns.
+
+    x, y       (N, 4) answer counts, before and after
+    questions  N item codes
+
+    Gives exactly the same numbers as calling ``extract_features`` row by row (tested), about
+    100x faster, because the maths runs on whole columns instead of building 16 small pandas
+    objects per item. Same checks too: 4-option items only.
+    """
+    x = np.asarray(x, dtype=float)
+    y = np.asarray(y, dtype=float)
+    questions = list(questions)
+    if x.ndim != 2 or x.shape[1] != 4 or y.shape != x.shape or len(questions) != len(x):
+        raise ValueError(f"Expected x and y of shape (N, 4) and N questions, got {x.shape}, {y.shape}, {len(questions)}.")
+
+    # The item part (P_0..P_15, asymm) is the same for every row of an item: work it out once.
+    item_codes, item_index = np.unique(questions, return_inverse=True)
+    item_rows = []
+    for q in item_codes:
+        P = np.asarray(p_matrices[q])
+        if P.shape != (4, 4):
+            raise ValueError(f"Item '{q}' has a {P.shape[0]}x{P.shape[1]} unreliability matrix; "
+                             "the EXP002 network only supports 4-option items (4x4).")
+        item_rows.append(np.append(P.ravel(), asymm_calc(P)))
+    item_part = np.array(item_rows).reshape(-1, 17)[item_index]
+
+    n_X, n_Y = x.sum(axis=1), y.sum(axis=1)
+    X, Y = x / n_X[:, None], y / n_Y[:, None]
+    XmY = np.abs(X - Y)
+    euclid_dist_XY = np.round(np.sqrt(np.sum((X - Y) ** 2, axis=1)), 4)
+
+    rv_vec = np.arange(1, 5, dtype=float)
+
+    def moments(prob):
+        mean = _rowdot(rv_vec, prob)
+        dev = rv_vec - mean[:, None]
+        stdev = np.sqrt(_rowdot(dev ** 2, prob))
+        return [mean, stdev, _rowdot(dev ** 3, prob) / stdev ** 3, _rowdot(dev ** 4, prob) / stdev ** 4]
+
+    columns = (
+        [f"X_{i + 1}" for i in range(4)] + [f"Y_{i + 1}" for i in range(4)] + [f"XmY_{i + 1}" for i in range(4)]
+        + [f"{m}_X" for m in ("mean", "stdev", "skewness", "kurtosis")]
+        + [f"{m}_Y" for m in ("mean", "stdev", "skewness", "kurtosis")]
+        + ["euclid_dist_XY", "n_X", "n_Y"] + [f"P_{i}" for i in range(16)] + ["asymm"]
+    )
+    values = np.column_stack([X, Y, XmY, *moments(X), *moments(Y), euclid_dist_XY, n_X, n_Y, item_part])
+    return pd.DataFrame(values, columns=columns)

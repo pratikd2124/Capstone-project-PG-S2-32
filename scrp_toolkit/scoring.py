@@ -73,7 +73,7 @@ def score_school(predictor: UnreliabilityPredictor, paths: ProjectPaths, school:
     sub_pre = pre_df[pre_df["school"] == school]
     sub_post = post_df[post_df["school"] == school]
 
-    rows = []
+    questions, x_rows, y_rows = [], [], []
     for q in question_list:
         # Answers for this item, ignoring students who skipped it.
         xc = sub_pre[q].dropna().astype(int)
@@ -85,18 +85,23 @@ def score_school(predictor: UnreliabilityPredictor, paths: ProjectPaths, school:
         y_counts = np.array([np.sum(yc == k) for k in range(1, 5)])
         if x_counts.sum() == 0 or y_counts.sum() == 0:
             continue
-        shape_hat, rate_hat = predictor.predict(x_counts, y_counts, q)
-        rows.append({
-            "question": q,
-            "n_pre": int(x_counts.sum()),
-            "n_post": int(y_counts.sum()),
-            "shape_hat": shape_hat,
-            "rate_hat": rate_hat,
-            "gamma_mean": shape_hat / rate_hat,
-            "asymm": asymm_calc(np.asarray(p_matrices[q])),
-        })
+        questions.append(q)
+        x_rows.append(x_counts)
+        y_rows.append(y_counts)
 
-    scores = pd.DataFrame(rows).sort_values("gamma_mean", ascending=False).reset_index(drop=True)
+    # All items in one go: same answers as predict() item by item, much faster.
+    x_counts, y_counts = np.array(x_rows).reshape(-1, 4), np.array(y_rows).reshape(-1, 4)
+    shape_hat, rate_hat = predictor.predict_batch(x_counts, y_counts, questions)
+    scores = pd.DataFrame({
+        "question": questions,
+        "n_pre": x_counts.sum(axis=1).astype(int),
+        "n_post": y_counts.sum(axis=1).astype(int),
+        "shape_hat": shape_hat,
+        "rate_hat": rate_hat,
+        "gamma_mean": shape_hat / rate_hat,
+        "asymm": [asymm_calc(np.asarray(p_matrices[q])) for q in questions],
+    })
+    scores = scores.sort_values("gamma_mean", ascending=False).reset_index(drop=True)
     scores.attrs["school"] = school
     return scores
 

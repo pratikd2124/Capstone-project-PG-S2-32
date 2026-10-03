@@ -10,6 +10,7 @@ venv/
 baseline_report.csv
 edge_cases/
 ry25_case_study_scores.csv
+profile_report.json
 
 # Your personal settings (copy local_settings.example.py). Never committed.
 local_settings.py
