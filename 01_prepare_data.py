@@ -2,7 +2,7 @@ from pathlib import Path
 import pandas as pd
 import matplotlib.pyplot as plt
 
-DATA = Path(__file__).parent / "DATA"
+DATA = Path(__file__).parent / "Data"
 OUT = Path(__file__).parent / "OUTPUTS"
 OUT.mkdir(exist_ok=True)
 QUESTION = "ry9"

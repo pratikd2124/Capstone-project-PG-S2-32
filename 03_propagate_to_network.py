@@ -3,7 +3,7 @@ import json, numpy as np, pandas as pd, matplotlib.pyplot as plt
 import onnxruntime as ort
 
 ROOT = Path(__file__).parent
-DATA, REF, OUT = ROOT/"DATA", ROOT/"REFERENCE", ROOT/"OUTPUTS"
+DATA, REF, OUT = ROOT/"Data", ROOT/"REFERENCE", ROOT/"OUTPUTS"
 QUESTION, N_SIMS, MATRIX_SAMPLE_SIZE = "ry9", 300, 100
 rng = np.random.default_rng(42)
 
