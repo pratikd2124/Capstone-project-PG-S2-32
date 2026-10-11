@@ -1,26 +1,73 @@
-from pathlib import Path
-import json, numpy as np, pandas as pd
+"""Sensitivity of an item's unreliability matrix to controlled perturbations."""
+
+from __future__ import annotations
+
+import argparse
+import numpy as np
+import pandas as pd
 import matplotlib.pyplot as plt
 
-ROOT = Path(__file__).parent
-OUT = ROOT / "OUTPUTS"; OUT.mkdir(exist_ok=True)
-QUESTION = "ry9"
-N_SIMS = 300
-MATRIX_SAMPLE_SIZE = 100   # replace when true test-retest n is known
-rng = np.random.default_rng(42)
+from standalone_common import (
+    DEFAULT_ITEM, FIGURES_DIR, RESULTS_DIR, asymm_calc, ensure_output_dirs,
+    load_context, mean_off_diagonal_mass, perturb_error_mass,
+)
 
-with open(ROOT / "REFERENCE/unreliability-matrices.json") as f:
-    P0 = np.array(json.load(f)[QUESTION], dtype=float)
 
-changes = []
-for i in range(N_SIMS):
-    P = np.vstack([rng.dirichlet(row*MATRIX_SAMPLE_SIZE + 1) for row in P0])
-    changes.append([i, np.mean(abs(P-P0)), np.max(abs(P-P0))])
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--assets-root", default=None)
+    parser.add_argument("--item", default=DEFAULT_ITEM)
+    parser.add_argument("--changes", nargs="+", type=float,
+                        default=[-0.10, -0.05, -0.01, 0.0, 0.01, 0.05, 0.10])
+    args = parser.parse_args()
 
-df = pd.DataFrame(changes, columns=["simulation","mean_change","max_change"])
-df.to_csv(OUT / "02_matrix_sensitivity.csv", index=False)
-plt.hist(df.mean_change, bins=25)
-plt.xlabel("Mean absolute matrix change"); plt.ylabel("Simulations")
-plt.title("Unreliability-matrix sensitivity"); plt.tight_layout()
-plt.savefig(OUT / "02_matrix_uncertainty.png", dpi=180)
-print(df[["mean_change","max_change"]].describe())
+    ensure_output_dirs()
+    ctx = load_context(args.assets_root, require_model=False)
+    if args.item not in ctx.p_matrices:
+        raise KeyError(f"Unknown survey item: {args.item}")
+    baseline = np.asarray(ctx.p_matrices[args.item], dtype=float)
+    if baseline.shape != (4, 4):
+        raise ValueError(f"This analysis is restricted to 4x4 items; {args.item} has {baseline.shape}")
+
+    base_asymm = asymm_calc(baseline)
+    base_offdiag = mean_off_diagonal_mass(baseline)
+    rows = []
+    for change in args.changes:
+        p = perturb_error_mass(baseline, change)
+        row = {
+            "item": args.item,
+            "relative_error_mass_change": change,
+            "percent_change": change * 100,
+            "baseline_asymm": base_asymm,
+            "perturbed_asymm": asymm_calc(p),
+            "delta_asymm": asymm_calc(p) - base_asymm,
+            "baseline_mean_offdiag_mass": base_offdiag,
+            "perturbed_mean_offdiag_mass": mean_off_diagonal_mass(p),
+            "frobenius_distance": float(np.linalg.norm(p - baseline)),
+            "max_row_sum_error": float(np.max(np.abs(p.sum(axis=1) - 1.0))),
+        }
+        for i in range(4):
+            for j in range(4):
+                row[f"p_{i+1}{j+1}"] = p[i, j]
+        rows.append(row)
+
+    df = pd.DataFrame(rows).sort_values("relative_error_mass_change")
+    path = RESULTS_DIR / "matrix_sensitivity.csv"
+    df.to_csv(path, index=False)
+
+    fig, ax = plt.subplots(figsize=(8, 5))
+    ax.plot(df["percent_change"], df["perturbed_asymm"], marker="o")
+    ax.axhline(base_asymm, linestyle="--", linewidth=1)
+    ax.set_xlabel("Relative change in off-diagonal error mass (%)")
+    ax.set_ylabel("Asymmetry score")
+    ax.set_title(f"{args.item}: unreliability-matrix sensitivity")
+    fig.tight_layout()
+    fig.savefig(FIGURES_DIR / "matrix_asymmetry_sensitivity.png", dpi=160)
+    plt.close(fig)
+
+    print(df[["percent_change", "perturbed_asymm", "delta_asymm", "frobenius_distance"]].to_string(index=False))
+    print(f"\nWrote {path}")
+
+
+if __name__ == "__main__":
+    main()

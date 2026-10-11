@@ -1,5 +1,5 @@
-numpy
-pandas
-matplotlib
-onnxruntime
-pymc
+numpy>=1.26
+pandas>=2.0
+scipy>=1.11
+matplotlib>=3.8
+onnxruntime>=1.17

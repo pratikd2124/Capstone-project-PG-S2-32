@@ -1,0 +1,9 @@
+scenario,item,n_pre,n_post,classification,shape,rate,gamma_mean,gamma_q95,outside_training_range_count,outside_training_range,reason,error
+normal,ry9,113,92,SAFE,9.970475608021188,20.926446972942113,0.4764533425532298,0.7487132600392203,0.0,,Finite prediction and all features are inside stored training min/max.,
+zero_samples,ry9,0,0,REJECT,,,,,,,Input cannot be safely processed by the current 4-option EXP002 pipeline.,Pre and Post counts must each sum to a positive value
+one_respondent,ry9,1,1,REJECT,,,,,,,Input cannot be safely processed by the current 4-option EXP002 pipeline.,"Non-finite/missing feature(s): skewness_X, kurtosis_X, skewness_Y, kurtosis_Y"
+single_category,ry9,100,100,REJECT,,,,,,,Input cannot be safely processed by the current 4-option EXP002 pipeline.,"Non-finite/missing feature(s): skewness_X, kurtosis_X, skewness_Y, kurtosis_Y"
+missing_category,ry9,100,100,SAFE,1.3875250782421817,36.578422535225506,0.03793288452792016,0.10143914333703168,0.0,,Finite prediction and all features are inside stored training min/max.,
+pre_post_imbalance,ry9,1000,10,WARN,1.3937110361884661,10.763204302037394,0.1294884866140325,0.34575342743149207,1.0,euclid_dist_XY,"Finite prediction, but feature(s) lie outside EXP002 stored training min/max.",
+very_large_n,ry9,20000,20000,WARN,64.04023446985255,2789.6968569937076,0.02295598330309801,0.02786924259347434,3.0,euclid_dist_XY; n_X; n_Y,"Finite prediction, but feature(s) lie outside EXP002 stored training min/max.",
+six_option_item,chs1,60,60,REJECT,,,,,,,Input cannot be safely processed by the current 4-option EXP002 pipeline.,EXP002 requires four response counts for Pre and Post

@@ -1,0 +1,8 @@
+scenario,item,n_pre,n_post,pre_1,pre_2,pre_3,pre_4,post_1,post_2,post_3,post_4
+normal,ry9,100,100,36,46,6,12,10,18,59,13
+zero_samples,ry9,0,0,0,0,0,0,0,0,0,0
+one_respondent,ry9,1,1,1,0,0,0,1,0,0,0
+single_category,ry9,100,100,100,0,0,0,100,0,0,0
+missing_category,ry9,100,100,40,30,30,0,35,35,30,0
+pre_post_imbalance,ry9,1000,10,400,300,200,100,4,3,2,1
+very_large_n,ry9,20000,20000,7080,9203,1239,2478,1956,3696,11739,2609

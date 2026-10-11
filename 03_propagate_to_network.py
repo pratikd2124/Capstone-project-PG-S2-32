@@ -1,67 +1,133 @@
-from pathlib import Path
-import json, numpy as np, pandas as pd, matplotlib.pyplot as plt
-import onnxruntime as ort
+"""Propagate matrix and sample-size sensitivity directly through EXP002.
 
-ROOT = Path(__file__).parent
-DATA, REF, OUT = ROOT/"Data", ROOT/"REFERENCE", ROOT/"OUTPUTS"
-QUESTION, N_SIMS, MATRIX_SAMPLE_SIZE = "ry9", 300, 100
-rng = np.random.default_rng(42)
+No scrp_toolkit imports are used. The script reads EXP002.json and the shipped
+ONNX model directly and reproduces RYA's feature calculations locally.
+"""
 
-def counts(file):
-    s = pd.to_numeric(pd.read_csv(file)[QUESTION], errors="coerce")
-    return np.array([(s == k).sum() for k in range(1,5)], dtype=float)
+from __future__ import annotations
 
-def moments(p):
-    v = np.arange(1,5); mean = v @ p
-    sd = np.sqrt(((v-mean)**2) @ p)
-    return [mean, sd, ((v-mean)**3 @ p)/sd**3, ((v-mean)**4 @ p)/sd**4]
+import argparse
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
 
-def asymmetry(P):
-    pairs = [(0,1),(0,2),(0,3),(1,2),(1,3),(2,3)]
-    return np.mean([(P[i,j]-P[j,i])**2 for i,j in pairs])
+from standalone_common import (
+    DEFAULT_ITEM, DEFAULT_PRE, DEFAULT_POST, FIGURES_DIR, RESULTS_DIR,
+    counts_from_proportions, ensure_output_dirs, load_context,
+    perturb_error_mass, predict_exp002, proportions_from_counts,
+)
 
-def make_features(x, y, P):
-    X, Y = x/x.sum(), y/y.sum()
-    return np.array(
-        list(X) + list(Y) + list(abs(X-Y)) +
-        moments(X) + moments(Y) +
-        [round(np.linalg.norm(X-Y),4), x.sum(), y.sum()] +
-        list(P.flatten()) + [asymmetry(P)], dtype=np.float32)
 
-x, y = counts(DATA/"RY25_PreMay10.csv"), counts(DATA/"RY25_PostMay10.csv")
-with open(REF/"unreliability-matrices.json") as f:
-    P0 = np.array(json.load(f)[QUESTION], dtype=float)
-with open(REF/"EXP002.json") as f:
-    meta = json.load(f)
+def sample_size_experiment(ctx, item, pre, post, sizes):
+    p_pre, p_post = proportions_from_counts(pre), proportions_from_counts(post)
+    rows = []
+    for n in sizes:
+        x = counts_from_proportions(p_pre, n)
+        y = counts_from_proportions(p_post, n)
+        try:
+            pred = predict_exp002(ctx, x, y, item)
+            rows.append({
+                "item": item, "n_pre": int(x.sum()), "n_post": int(y.sum()),
+                "shape": pred.shape, "rate": pred.rate,
+                "gamma_mean": pred.gamma_mean, "gamma_q95": pred.gamma_q95,
+                "outside_training_range_count": len(pred.outside_training_range),
+                "outside_training_range": "; ".join(pred.outside_training_range),
+                "status": "WARN" if pred.outside_training_range else "OK", "error": "",
+            })
+        except Exception as exc:
+            rows.append({"item": item, "n_pre": int(x.sum()), "n_post": int(y.sum()),
+                         "shape": np.nan, "rate": np.nan, "gamma_mean": np.nan,
+                         "gamma_q95": np.nan, "outside_training_range_count": np.nan,
+                         "outside_training_range": "", "status": "ERROR", "error": str(exc)})
+    return pd.DataFrame(rows)
 
-mm = pd.read_json(meta["min_max_df"])
-mins = dict(zip(mm.column, mm["min"])); maxs = dict(zip(mm.column, mm["max"]))
-labels = meta["feature_labels"]
-session = ort.InferenceSession(str(REF/"EXP002_nn_optimal_epoch.onnx"))
-input_name = session.get_inputs()[0].name
 
-def predict(P):
-    f = make_features(x, y, P)
-    z = np.array([(v-mins[k])/(maxs[k]-mins[k]) for v,k in zip(f, labels)], dtype=np.float32)[None,:]
-    pred = np.asarray(session.run(None, {input_name:z})[0]).reshape(-1)[:2]
-    shape = pred[0]*(maxs["shape"]-mins["shape"]) + mins["shape"]
-    rate = pred[1]*(maxs["rate"]-mins["rate"]) + mins["rate"]
-    return shape, rate
+def matrix_experiment(ctx, item, pre, post, changes):
+    baseline_p = np.asarray(ctx.p_matrices[item], dtype=float)
+    base = predict_exp002(ctx, pre, post, item, baseline_p)
+    rows = []
+    for change in changes:
+        p = perturb_error_mass(baseline_p, change)
+        try:
+            pred = predict_exp002(ctx, pre, post, item, p)
+            rows.append({
+                "item": item, "relative_error_mass_change": change,
+                "percent_change": change * 100,
+                "shape": pred.shape, "rate": pred.rate,
+                "gamma_mean": pred.gamma_mean, "gamma_q95": pred.gamma_q95,
+                "baseline_gamma_mean": base.gamma_mean,
+                "baseline_gamma_q95": base.gamma_q95,
+                "delta_gamma_mean": pred.gamma_mean - base.gamma_mean,
+                "percent_delta_gamma_mean": (pred.gamma_mean / base.gamma_mean - 1) * 100,
+                "delta_gamma_q95": pred.gamma_q95 - base.gamma_q95,
+                "outside_training_range_count": len(pred.outside_training_range),
+                "outside_training_range": "; ".join(pred.outside_training_range),
+                "status": "WARN" if pred.outside_training_range else "OK", "error": "",
+            })
+        except Exception as exc:
+            rows.append({"item": item, "relative_error_mass_change": change,
+                         "percent_change": change * 100, "shape": np.nan, "rate": np.nan,
+                         "gamma_mean": np.nan, "gamma_q95": np.nan,
+                         "baseline_gamma_mean": base.gamma_mean, "baseline_gamma_q95": base.gamma_q95,
+                         "delta_gamma_mean": np.nan, "percent_delta_gamma_mean": np.nan,
+                         "delta_gamma_q95": np.nan, "outside_training_range_count": np.nan,
+                         "outside_training_range": "", "status": "ERROR", "error": str(exc)})
+    return pd.DataFrame(rows)
 
-rows = []
-for i in range(N_SIMS):
-    P = np.vstack([rng.dirichlet(row*MATRIX_SAMPLE_SIZE + 1) for row in P0])
-    shape, rate = predict(P)
-    rows.append([i, shape, rate])
 
-df = pd.DataFrame(rows, columns=["simulation","shape","rate"])
-df.to_csv(OUT/"03_network_uncertainty.csv", index=False)
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--assets-root", default=None)
+    parser.add_argument("--item", default=DEFAULT_ITEM)
+    parser.add_argument("--pre", nargs=4, type=float, default=DEFAULT_PRE.tolist())
+    parser.add_argument("--post", nargs=4, type=float, default=DEFAULT_POST.tolist())
+    parser.add_argument("--sizes", nargs="+", type=int,
+                        default=[20, 50, 100, 250, 500, 1000, 5000, 10_000, 20_000])
+    parser.add_argument("--changes", nargs="+", type=float,
+                        default=[-0.10, -0.05, -0.01, 0.0, 0.01, 0.05, 0.10])
+    args = parser.parse_args()
 
-for col in ["shape", "rate"]:
-    lo, mid, hi = df[col].quantile([.025,.5,.975])
-    plt.figure(); plt.hist(df[col], bins=25)
-    plt.axvline(lo, ls="--"); plt.axvline(mid); plt.axvline(hi, ls="--")
-    plt.xlabel(col); plt.ylabel("Simulations")
-    plt.title(f"{col}: median + 95% uncertainty interval")
-    plt.tight_layout(); plt.savefig(OUT/f"03_{col}_interval.png", dpi=180); plt.close()
-    print(f"{col}: median={mid:.4f}, 95% interval=({lo:.4f}, {hi:.4f})")
+    ensure_output_dirs()
+    ctx = load_context(args.assets_root, require_model=True)
+    pre, post = np.asarray(args.pre), np.asarray(args.post)
+    if args.item not in ctx.p_matrices or np.asarray(ctx.p_matrices[args.item]).shape != (4, 4):
+        raise ValueError(f"{args.item} is not a supported 4-option EXP002 item")
+
+    sample = sample_size_experiment(ctx, args.item, pre, post, args.sizes)
+    matrix = matrix_experiment(ctx, args.item, pre, post, args.changes)
+    sample.to_csv(RESULTS_DIR / "sample_size_sensitivity.csv", index=False)
+    matrix.to_csv(RESULTS_DIR / "matrix_sensitivity_network.csv", index=False)
+
+    good = sample[np.isfinite(sample["gamma_mean"])].copy()
+    if not good.empty:
+        fig, ax = plt.subplots(figsize=(8, 5))
+        ax.plot(good["n_pre"], good["gamma_mean"], marker="o", label="Gamma mean")
+        ax.plot(good["n_pre"], good["gamma_q95"], marker="o", label="Gamma 95th percentile")
+        ax.set_xscale("log")
+        ax.set_xlabel("Pre/Post sample size (log scale)")
+        ax.set_ylabel("Predicted d_hat_norm distribution")
+        ax.set_title(f"{args.item}: EXP002 sample-size sensitivity")
+        ax.legend()
+        fig.tight_layout()
+        fig.savefig(FIGURES_DIR / "sample_size_sensitivity.png", dpi=160)
+        plt.close(fig)
+
+    good = matrix[np.isfinite(matrix["gamma_mean"])].copy()
+    if not good.empty:
+        fig, ax = plt.subplots(figsize=(8, 5))
+        ax.plot(good["percent_change"], good["gamma_mean"], marker="o", label="Gamma mean")
+        ax.plot(good["percent_change"], good["gamma_q95"], marker="o", label="Gamma 95th percentile")
+        ax.set_xlabel("Relative change in off-diagonal error mass (%)")
+        ax.set_ylabel("Predicted d_hat_norm distribution")
+        ax.set_title(f"{args.item}: matrix sensitivity propagated through EXP002")
+        ax.legend()
+        fig.tight_layout()
+        fig.savefig(FIGURES_DIR / "matrix_network_sensitivity.png", dpi=160)
+        plt.close(fig)
+
+    print("Sample-size sensitivity:\n", sample.to_string(index=False))
+    print("\nMatrix sensitivity:\n", matrix.to_string(index=False))
+
+
+if __name__ == "__main__":
+    main()
