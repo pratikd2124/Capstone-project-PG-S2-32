@@ -1,0 +1,2 @@
+row_index,true_label,mean_prob_incompatible,std_prob_incompatible,exp_code,P_matrix_question,source_file,group_size_ratio,active_categories_X,active_categories_Y,degenerate_X,degenerate_Y,sparse_count_X,sparse_count_Y,asymmetry_P,all_rows_diagonal_mode_P,compatibility_zone_v1,pred_oct9,ks_stat,q95_rel_error,q99_rel_error,cdf_error_rmse
+284,1,0.0692490287558553,0.03996745088405748,orthog_B_4_5543,ry11,orthog_B_4_feature_output_df.csv,66.75,4,4,0,0,0,0,0.0113436249999999,1,incompatible,0,0.0257817893634245,0.1206708732782595,0.0189994001120094,0.0126009062865694

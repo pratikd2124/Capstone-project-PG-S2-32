@@ -1,0 +1,8 @@
+validation_stratum,ambiguous,compatible,incompatible
+degenerate,13,5,24
+non_diagonal_P,3,57,0
+ratio_100_plus,35,12,43
+ratio_10_50,12,54,4
+ratio_50_100,42,20,18
+regular,6,72,0
+sparse,36,24,20
