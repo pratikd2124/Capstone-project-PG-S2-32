@@ -35,7 +35,7 @@ def batched_onnx_session(onnx_path: str) -> ort.InferenceSession:
 
     RYA's file only takes a single row of 40 numbers, so every item costs a separate call.
     Only the declared input/output shapes change here; the weights and operations are
-    untouched, and the outputs are identical (tests/test_inference_batch.py).
+    untouched, and the outputs are the same (tests/test_profiling.py).
     """
     import onnx   # only needed here; reading RYA's file as-is doesn't need it
 

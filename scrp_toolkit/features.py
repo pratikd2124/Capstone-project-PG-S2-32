@@ -98,10 +98,11 @@ def extract_features(x: np.ndarray, y: np.ndarray, question: str, p_matrices: Di
 def _rowdot(a: np.ndarray, b: np.ndarray) -> np.ndarray:
     """np.dot of each row of ``a`` with the same row of ``b``.
 
-    Written as a stack of tiny matrix products on purpose: numpy sends these to the same BLAS
-    dot routine as ``np.dot`` on one row, so the result is bit-for-bit what
-    ``moment_calculator`` gives. ``(a * b).sum(axis=1)`` adds in a different order and drifts
-    in the last digit for about a quarter of rows.
+    Written as a stack of tiny matrix products on purpose: numpy sends these to a BLAS dot
+    routine like ``np.dot`` on one row. On an Apple M2 the result is bit-for-bit what
+    ``moment_calculator`` gives; on some other CPUs (GitHub's Linux runners) BLAS picks a
+    kernel that adds the 4 terms in another order, and a few values differ in the last bit
+    (<= 9e-16). ``(a * b).sum(axis=1)`` drifts like that on about a quarter of rows everywhere.
     """
     a, b = np.broadcast_arrays(a, b)
     return np.matmul(a[:, None, :], b[:, :, None])[:, 0, 0]
@@ -113,9 +114,10 @@ def extract_features_batch(x: np.ndarray, y: np.ndarray, questions, p_matrices: 
     x, y       (N, 4) answer counts, before and after
     questions  N item codes
 
-    Gives exactly the same numbers as calling ``extract_features`` row by row (tested), about
-    100x faster, because the maths runs on whole columns instead of building 16 small pandas
-    objects per item. Same checks too: 4-option items only.
+    Gives the same numbers as calling ``extract_features`` row by row (identical on the machine
+    it was built on, at most a few last-bit differences on other CPUs; tested), about 100x
+    faster, because the maths runs on whole columns instead of building 16 small pandas objects
+    per item. Same checks too: 4-option items only.
     """
     x = np.asarray(x, dtype=float)
     y = np.asarray(y, dtype=float)
