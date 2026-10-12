@@ -13,7 +13,7 @@ can't handle them.
 """
 from __future__ import annotations
 
-from typing import Dict
+from typing import Dict, List, Tuple
 
 import numpy as np
 import pandas as pd
@@ -23,18 +23,34 @@ from .inference import UnreliabilityPredictor
 from .reliability import asymm_calc
 
 
-def pick_case_study_school(paths: ProjectPaths, p_matrices: Dict[str, np.ndarray]) -> tuple[str, list[str]]:
-    """The school with the most students in both surveys, and the items we can score for it."""
+def load_survey(paths: ProjectPaths, p_matrices: Dict[str, np.ndarray]) -> Tuple[List[str], pd.DataFrame, pd.DataFrame]:
+    """Read the RY25 surveys once: the items we can score, then the Pre and Post answers.
+
+    Items are the 4-option ones that appear in both files. Only the ``school`` column and those
+    items are read. The two CSVs are large (115k and 71k students), so reading them is most of
+    the time scoring takes; pass the result to ``pick_case_study_school`` and ``score_school``
+    to avoid reading them again.
+    """
     if not paths.have_ry25_data:
         raise RuntimeError("RY25 Pre/Post CSVs were not found under the project root.")
 
-    # Items that appear in both survey files and are 4-option.
     pre_cols = pd.read_csv(paths.pre_csv_path, nrows=0).columns.tolist()
     post_cols = pd.read_csv(paths.post_csv_path, nrows=0).columns.tolist()
     question_list = [q for q in p_matrices if q in pre_cols and q in post_cols and np.shape(p_matrices[q]) == (4, 4)]
 
     pre_df = pd.read_csv(paths.pre_csv_path, usecols=["school"] + question_list)
     post_df = pd.read_csv(paths.post_csv_path, usecols=["school"] + question_list)
+    return question_list, pre_df, post_df
+
+
+def pick_case_study_school(paths: ProjectPaths, p_matrices: Dict[str, np.ndarray],
+                           survey: Tuple[List[str], pd.DataFrame, pd.DataFrame] | None = None) -> tuple[str, list[str]]:
+    """The school with the most students in both surveys, and the items we can score for it.
+
+    ``survey`` is what ``load_survey`` returns; give it if you already have it, otherwise the
+    CSVs are read here.
+    """
+    question_list, pre_df, post_df = survey if survey is not None else load_survey(paths, p_matrices)
 
     # Rank schools by their smaller group (before or after), so both groups are big.
     pre_sizes = pre_df.groupby("school").size()
@@ -47,29 +63,27 @@ def pick_case_study_school(paths: ProjectPaths, p_matrices: Dict[str, np.ndarray
     return school, question_list
 
 
-def score_school(predictor: UnreliabilityPredictor, paths: ProjectPaths, school: str | None = None) -> pd.DataFrame:
+def score_school(predictor: UnreliabilityPredictor, paths: ProjectPaths, school: str | None = None,
+                 survey: Tuple[List[str], pd.DataFrame, pd.DataFrame] | None = None) -> pd.DataFrame:
     """One row per item for ``school`` (or the best-covered school if none is given).
 
     Columns: question, n_pre, n_post, shape_hat, rate_hat, gamma_mean, asymm; sorted with the
     biggest gamma_mean first. The school id is kept in ``scores.attrs["school"]``.
 
+    The survey CSVs are read once (``load_survey``), or not at all if ``survey`` is given, so
+    scoring many schools in a row only pays for the reading once.
+
     How to read gamma_mean (= shape / rate): the size of before/after difference that answer
     noise alone would typically produce for this item at these group sizes. It is *not* a
     reliability score for the item, which is what Murat's notebook called it.
     """
-    if not paths.have_ry25_data:
-        raise RuntimeError("RY25 Pre/Post CSVs were not found under the project root.")
-
     p_matrices = predictor.p_matrices
+    if survey is None:
+        survey = load_survey(paths, p_matrices)
+    question_list, pre_df, post_df = survey
     if school is None:
-        school, question_list = pick_case_study_school(paths, p_matrices)
-    else:
-        pre_cols = pd.read_csv(paths.pre_csv_path, nrows=0).columns.tolist()
-        post_cols = pd.read_csv(paths.post_csv_path, nrows=0).columns.tolist()
-        question_list = [q for q in p_matrices if q in pre_cols and q in post_cols and np.shape(p_matrices[q]) == (4, 4)]
+        school, _ = pick_case_study_school(paths, p_matrices, survey)
 
-    pre_df = pd.read_csv(paths.pre_csv_path, usecols=["school"] + question_list)
-    post_df = pd.read_csv(paths.post_csv_path, usecols=["school"] + question_list)
     sub_pre = pre_df[pre_df["school"] == school]
     sub_post = post_df[post_df["school"] == school]
 

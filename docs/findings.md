@@ -32,7 +32,20 @@ Source of truth: Box folder "Statistical Core Refinement Project" (ID 4101471090
 ## Data-quality findings
 - Corrupt training row orthog_B_3_large_classes_2790 (ry2): n_Y = 1 but Y shares 0, 1, 1, 1. It alone sets 9 of EXP002's scaling limits (e.g. stdev_Y max 10.49 vs real 1.50; n_Y min 1 vs 5). The baseline keeps it; drop it before retraining.
 - Training group sizes are 5–9,819 (Pre) / 5–9,940 (Post). The model gives no warning outside this range.
+- Only 3 schools appear in both RY25 surveys (Pre 358 school ids, Post 326; accessCode overlap 0). The case-study school f7a2542b… is one of them; the others are 72adf679… (1,720 / 94) and 83dff251… (1,640 / 69). Either most schools took only one survey or ids were hashed differently per file. Check before building before/after comparisons on real data.
 - Zero-variance groups (everyone gives the same answer) and single respondents give NaN features (RYA's code and ours); 68 training rows are dropped for this.
+
+## Model efficiency (Murat, 3–12 Oct 2026, branch `murat`)
+Re-run any time with `python -m scrp_toolkit.cli profile` (writes `profile_report.json`). Timings are from an Apple M2; other machines differ, the ratios should hold.
+- Where time went in one `predict()` (517 µs): feature extraction with pandas 76%, scaling 8%, network 16%. The pandas cost is 16 small Series built and joined per call. RYA's ONNX file takes one row of 40 per call.
+- Network: 99.1% of the 1,261,058 parameters are in the 19 hidden 256x256 layers. Weights are 4.8 MB fp32 (1.2 MB as int8); about 2 KB of activations per row. Memory is not a constraint.
+- `predict_batch` (inference.py) + `extract_features_batch` (features.py): the same steps on whole columns, network run 4,096 rows per call (same ONNX weights, batch dimension opened in memory only). 200k predictions: 104.9 s -> 1.65 s (64x). `predict` and `extract_features` are unchanged.
+- Bit-identical to `predict`, NaN cases included: 20,000 random items (0 of 40,006 outputs differ), all 63,328 raw training rows turned back into counts (0 of 126,656), the 3 RY25 schools in both surveys (0 of 240), and the 242 case-study checks in the baseline. The row-wise dot products use `np.matmul` on stacked rows, which calls the same BLAS routine as `np.dot`; `(a*b).sum(axis=1)` adds in another order and drifted in the last digit on ~25% of rows.
+- `score_school` reads each survey CSV once (`load_survey` in scoring.py; was twice): 0.80 s -> 0.42 s, identical output. Pass `survey=` to score several schools without reading again. Almost all of the remaining time is the CSV read itself.
+- After batching, the network is 88% of `predict_batch` time, so shrinking it is the next lever.
+- Post-training int8 does not work for EXP002: `quantize_dynamic` runs the network 2.9x faster but moves gamma_mean by 26% (median) and up to 7.5x; per-channel is worse (66% median). Errors build up over 20 layers. A smaller network (distillation from EXP002), possibly with quantization-aware training, is the route instead.
+- Not adopted: running the network in PyTorch is 1.7x faster but not bit-identical (~1e-6 relative) and doesn't help the browser, which runs ONNX. pandas' pyarrow CSV reader would need a new dependency for everyone.
+- First `predict_batch` call builds the batched session (~0.1 s, once per predictor); later calls of 40 items take ~1.5 ms.
 
 ## Open questions for RYA
 1. Rate scale (likely resolved): the code implies the model predicts the Gamma of d-hat including the ½(1/n+1/m) factor, so the portal uses the rate as-is. Confirm.
@@ -47,3 +60,7 @@ Source of truth: Box folder "Statistical Core Refinement Project" (ID 4101471090
 - NaN on zero-variance input (SIN-WEI / Shuyun): guard upstream (stdev == 0) or have the detector catch it.
 - Edge cases: `edge_case_instance_data.csv` has placeholder targets. Never put it in instance_data/; it is detector data only.
 - Any analysis including chs1-6 must drop them until a 6-option model exists.
+- Bulk scoring (Shlok, Pratik): use `predictor.predict_batch(x, y, questions)` instead of looping over `predict`; same answers, ~60x faster. For several schools, call `load_survey` once and pass `survey=` to `score_school`.
+- Decision needed (all): a shrunk network can't be bit-identical. Agree how close is close enough (e.g. max relative change in gamma_mean) before Murat picks a smaller model. Pratik's confidence ranges could set the bar.
+- "Affordable at 200k": Murat has read this as 200,000 predictions (one item for one before/after pair). Confirm, or say what the 200k counts.
+- Pre-merge check is now `pytest -q` with 43 passed (was 33).
