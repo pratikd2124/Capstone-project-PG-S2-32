@@ -8,6 +8,7 @@ Run from the repo root (in the Anaconda Prompt, after ``conda activate scrp``):
     python -m scrp_toolkit.cli validate --known-answers scrp_toolkit/known_answers/ry9_example.json
     python -m scrp_toolkit.cli gen-edge-cases --check-response-cases
     python -m scrp_toolkit.cli profile           # where EXP002's time and memory go
+    python -m scrp_toolkit.cli export-model      # EXP002 with fp16 weights, for the browser
     python -m scrp_toolkit.cli train --quick-demo      # experiments only: train a fresh network
     python -m scrp_toolkit.cli compare --quick-demo    # experiments only: fresh network vs EXP002
 
@@ -193,6 +194,18 @@ def cmd_profile(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_export_model(args: argparse.Namespace) -> int:
+    """Write EXP002 as an ONNX file that takes batches, by default with fp16 weights."""
+    from .inference import onnx_model_bytes
+
+    paths = resolve_project_paths(args.project_root, args.zip)
+    paths.require("onnx_path")
+    data = onnx_model_bytes(paths.onnx_path, batched=True, weights=args.weights)
+    Path(args.out).write_bytes(data)
+    print(f"Saved: {args.out}  ({len(data) / 2**20:.2f} MB, weights {args.weights}, input [batch, 40])")
+    return 0
+
+
 def cmd_gen_edge_cases(args: argparse.Namespace) -> int:
     """Write the edge-case files for the input-safety detector (see edge_cases.py)."""
     from . import edge_cases
@@ -252,6 +265,13 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--scale", type=int, default=200_000, help="Predictions to project the cost to")
     p.add_argument("--out", default=str(settings.PROFILE_JSON), help="JSON report (default: PROFILE_JSON in settings.py)")
     p.set_defaults(func=cmd_profile)
+
+    p = sub.add_parser("export-model", help="EXP002 as a batch-ready ONNX file (fp16 weights by default)")
+    _add_common_args(p)
+    p.add_argument("--weights", choices=["fp16", "fp32"], default="fp16",
+                   help="fp16 halves the file (close to EXP002); fp32 is RYA's weights exactly")
+    p.add_argument("--out", default=str(settings.BROWSER_MODEL), help="default: BROWSER_MODEL in settings.py")
+    p.set_defaults(func=cmd_export_model)
 
     p = sub.add_parser("gen-edge-cases", help="Edge-case files for the input-safety detector")
     p.add_argument("--project-root", default=None, help="Needed only with --check-response-cases")

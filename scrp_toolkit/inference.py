@@ -30,16 +30,11 @@ from .features import extract_features, extract_features_batch
 from .reliability import load_p_matrices
 
 
-def batched_onnx_session(onnx_path: str) -> ort.InferenceSession:
-    """The same ONNX model, but accepting a batch of rows (N x 40) instead of one row.
+WEIGHT_OPTIONS = ("fp32", "fp16")
 
-    RYA's file only takes a single row of 40 numbers, so every item costs a separate call.
-    Only the declared input/output shapes change here; the weights and operations are
-    untouched, and the outputs are the same (tests/test_profiling.py).
-    """
-    import onnx   # only needed here; reading RYA's file as-is doesn't need it
 
-    model = onnx.load(onnx_path)
+def _open_batch_dim(model) -> None:
+    """Let the model take a batch of rows (N x 40) instead of one row of 40."""
     for value in (model.graph.input[0], model.graph.output[0]):
         dims = value.type.tensor_type.shape.dim
         if len(dims) == 1:
@@ -49,18 +44,81 @@ def batched_onnx_session(onnx_path: str) -> ort.InferenceSession:
             dims.add().dim_value = last
         else:
             dims[0].dim_param = "batch"
-    return ort.InferenceSession(model.SerializeToString())
+
+
+def _store_weights_fp16(model) -> None:
+    """Store every 32-bit weight as 16-bit, with a Cast back to 32-bit inside the model.
+
+    The file roughly halves (EXP002: 4.8 MB -> 2.4 MB, for the browser) and the maths still
+    runs in 32-bit: speed is unchanged (measured on the M2). Only the weights are rounded:
+    outputs move by ~1e-4 (median), and on 40,000 comparisons 0.16% of significant / not
+    significant decisions flip, half of what fixing the 2-decimal rounding of the matrices
+    does (docs/findings.md).
+    """
+    from onnx import TensorProto, helper, numpy_helper
+
+    g = model.graph
+    float_inits = [i for i in g.initializer if i.data_type == TensorProto.FLOAT]
+    names = {i.name for i in float_inits}
+    halves = [numpy_helper.from_array(numpy_helper.to_array(i).astype(np.float16), i.name + "_fp16")
+              for i in float_inits]
+    casts = [helper.make_node("Cast", [i.name + "_fp16"], [i.name], to=TensorProto.FLOAT) for i in float_inits]
+
+    keep = [i for i in g.initializer if i.name not in names]
+    del g.initializer[:]
+    g.initializer.extend(keep + halves)
+    # Older exports also list the weights as graph inputs; now the Cast nodes produce them.
+    inputs = [v for v in g.input if v.name not in names]
+    del g.input[:]
+    g.input.extend(inputs)
+    nodes = list(g.node)
+    del g.node[:]
+    g.node.extend(casts + nodes)
+
+
+def onnx_model_bytes(onnx_path: str, batched: bool = False, weights: str = "fp32") -> bytes:
+    """RYA's ONNX model, optionally taking batches and/or with its weights stored as fp16.
+
+    Built in memory: the file in data/ is never changed.
+    """
+    if weights not in WEIGHT_OPTIONS:
+        raise ValueError(f"weights must be one of {WEIGHT_OPTIONS}, got {weights!r}")
+    import onnx   # only needed here; reading RYA's file as-is doesn't need it
+
+    model = onnx.load(onnx_path)
+    if batched:
+        _open_batch_dim(model)
+    if weights == "fp16":
+        _store_weights_fp16(model)
+    return model.SerializeToString()
+
+
+def batched_onnx_session(onnx_path: str, weights: str = "fp32") -> ort.InferenceSession:
+    """The same ONNX model, but accepting a batch of rows (N x 40) instead of one row.
+
+    RYA's file only takes a single row of 40 numbers, so every item costs a separate call.
+    Only the declared input/output shapes change here; the weights and operations are
+    untouched, and the outputs are the same (tests/test_profiling.py).
+    """
+    return ort.InferenceSession(onnx_model_bytes(onnx_path, batched=True, weights=weights))
 
 
 class UnreliabilityPredictor:
     """RYA's trained model, ready to score items.
 
     Loading the model takes a moment, so do it once and call ``predict`` as often as you like.
+
+    ``weights="fp16"`` uses EXP002 with its weights stored as 16-bit (half the file size, for
+    the browser). It is close to but not identical to EXP002; the default "fp32" is RYA's
+    model exactly, and is what the baseline uses.
     """
 
-    def __init__(self, paths: ProjectPaths):
+    def __init__(self, paths: ProjectPaths, weights: str = "fp32"):
         paths.require("onnx_path", "metadata_path")
+        if weights not in WEIGHT_OPTIONS:
+            raise ValueError(f"weights must be one of {WEIGHT_OPTIONS}, got {weights!r}")
         self.paths = paths
+        self.weights = weights
 
         # EXP002.json holds the model's settings and the min/max of every input and output
         # seen during training. We need the same min/max to scale things the same way.
@@ -72,7 +130,8 @@ class UnreliabilityPredictor:
 
         self.p_matrices: Dict[str, np.ndarray] = load_p_matrices(paths.pmatrices_path)
 
-        self.session = ort.InferenceSession(paths.onnx_path)
+        model = paths.onnx_path if weights == "fp32" else onnx_model_bytes(paths.onnx_path, weights=weights)
+        self.session = ort.InferenceSession(model)
         self._input_name = self.session.get_inputs()[0].name
         # RYA exported EXP002 to take a plain list of 40 numbers. Some re-exports expect a
         # batch of lists instead, so check once which kind this file wants.
@@ -90,6 +149,7 @@ class UnreliabilityPredictor:
         return (
             f"Model: {m['n_layers']} layers, width {m['width']}, "
             f"{len(m['feature_labels'])} features, P_transform='{m['P_transform']}'"
+            + (", weights stored as fp16" if self.weights == "fp16" else "")
         )
 
     def _normalise(self, value: float, col: str) -> float:
@@ -148,7 +208,7 @@ class UnreliabilityPredictor:
         scaled = ((feats - self._min_vec) / (self._max_vec - self._min_vec)).astype(np.float32)
 
         if self._batch_session is None:
-            self._batch_session = batched_onnx_session(self.paths.onnx_path)
+            self._batch_session = batched_onnx_session(self.paths.onnx_path, weights=self.weights)
         in_name = self._batch_session.get_inputs()[0].name
         raw_out = np.concatenate([
             self._batch_session.run(None, {in_name: scaled[i:i + chunk_size]})[0]

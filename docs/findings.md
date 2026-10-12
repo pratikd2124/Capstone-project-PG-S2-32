@@ -45,11 +45,17 @@ Re-run any time with `python -m scrp_toolkit.cli profile` (writes `profile_repor
 - `score_school` reads each survey CSV once (`load_survey` in scoring.py; was twice): 0.80 s -> 0.42 s, identical output. Pass `survey=` to score several schools without reading again. Almost all of the remaining time is the CSV read itself.
 - After batching, the network is 88% of `predict_batch` time, so shrinking it is the next lever.
 - Post-training int8 does not work for EXP002: `quantize_dynamic` runs the network 2.9x faster but moves gamma_mean by 26% (median) and up to 7.5x; per-channel is worse (66% median). Errors build up over 20 layers. A smaller network (distillation from EXP002), possibly with quantization-aware training, is the route instead.
+- fp16 weights (opt-in: `UnreliabilityPredictor(paths, weights="fp16")`, `cli export-model`): EXP002's weights stored as 16-bit with a Cast back to 32-bit. File 4.81 MB -> 2.41 MB, same speed, outputs move ~1e-4 (median), at most 1.1% on 2,000 random items. Decisions: 0.16% flip (see below), half the rounding yardstick. Default stays fp32 (RYA's model exactly); the baseline uses fp32.
+- Decision check (scratch script, 12 Oct; not in the toolkit yet): stand-in for the minimal-effects test at epsilon = 0, alpha = 0.05. Observed d_hat with RYA's formula (d_hat_calc in d_hat_simulation_from_LL.R, B_matrix.txt, scale_true) against the Gamma the network predicts when both groups get the pooled answer shares; p = Gamma survival at d_hat. 40,000 synthetic comparisons on the 53 real matrices, group sizes 20–2,000, true change 0–25% (27% significant, 12,608 close calls with 0.01 < p < 0.20). Not RYA's boundary test; only for comparing models with each other.
+  - Yardsticks (EXP002 against itself): fixing the 2-decimal rounding of the matrices (rows renormalised) flips 0.32% of decisions (1.0% of close calls); matrix error mass ±1% flips 0.37–0.39% (1.2%).
+  - fp16 weights: 0.16% (0.5% of close calls).
+  - Distilled networks (trained to copy EXP002, corrupt row dropped, log(shape)/log(rate) loss, mostly null-case inputs): 4x128 0.21 MB 23x faster 0.74%; 4x256 0.80 MB 7x 0.58%; 6x256 1.30 MB 4.5x 0.56%. More width/epochs stopped helping at ~0.56%, above the yardsticks. Against the simulation truth they are also worse than EXP002 (gamma_mean median error 2.6% for 4x256 vs 1.3%), so the gap is real error, not EXP002 noise. Not added to the toolkit; documented as an option if the team accepts more loss or the browser needs more speed. Training only on inputs where the two groups differ was much worse (2.3% flips): the test calls the network on null-case inputs.
+- Scale of EXP002's Gamma (open question 1): re-running RYA's simulation in Python for 25 training rows (3,000 trials each), mean simulated scaled d_hat / EXP002's Gamma mean = 1.003 (median; 0.92–1.04). So the Gamma is for d_hat *with* the ½(1/n+1/m) factor and the rate is used as-is.
 - Not adopted: running the network in PyTorch is 1.7x faster but not bit-identical (~1e-6 relative) and doesn't help the browser, which runs ONNX. pandas' pyarrow CSV reader would need a new dependency for everyone.
 - First `predict_batch` call builds the batched session (~0.1 s, once per predictor); later calls of 40 items take ~1.5 ms.
 
 ## Open questions for RYA
-1. Rate scale (likely resolved): the code implies the model predicts the Gamma of d-hat including the ½(1/n+1/m) factor, so the portal uses the rate as-is. Confirm.
+1. Rate scale (resolved by simulation, 12 Oct, see Model efficiency): the model predicts the Gamma of d-hat including the ½(1/n+1/m) factor, so the portal uses the rate as-is. Confirm.
 2. Portal JavaScript for the minimal-effects test (epsilon, boundary groups, p-value).
 3. EXP002's split seed, if logged.
 4. sun1 / ry17 row 2 col 1: which value is correct, JSON (0.07 / 0.09) or RData (0.08)?
@@ -64,4 +70,5 @@ Re-run any time with `python -m scrp_toolkit.cli profile` (writes `profile_repor
 - Bulk scoring (Shlok, Pratik): use `predictor.predict_batch(x, y, questions)` instead of looping over `predict`; same answers, ~60x faster. For several schools, call `load_survey` once and pass `survey=` to `score_school`.
 - Decision needed (all): a shrunk network can't be bit-identical. Agree how close is close enough (e.g. max relative change in gamma_mean) before Murat picks a smaller model. Pratik's confidence ranges could set the bar.
 - "Affordable at 200k": Murat has read this as 200,000 predictions (one item for one before/after pair). Confirm, or say what the 200k counts.
-- Pre-merge check is now `pytest -q` with 43 passed (was 33).
+- Pre-merge check is now `pytest -q` with 47 passed (was 33).
+- Decision tolerance (all): fp16 flips 0.16% of stand-in decisions, below the matrix-rounding yardstick (0.32%). If that is acceptable, fp16 is the browser model. The realistic uncertainty of the matrices (Pratik) decides how much more loss, e.g. a 0.8 MB distilled network at 0.58%, would be acceptable.

@@ -7,6 +7,8 @@ the other, so features can differ in the last bit (seen on GitHub's Linux runner
 way. The tests therefore allow a few units in the last place, which is far below anything
 the model can see (its inputs are 32-bit).
 """
+from pathlib import Path
+
 import numpy as np
 import pytest
 
@@ -66,3 +68,45 @@ def test_batch_refuses_six_option_items(predictor):
 def test_empty_batch(predictor):
     shape, rate = predictor.predict_batch(np.empty((0, 4)), np.empty((0, 4)), [])
     assert shape.shape == rate.shape == (0,)
+
+
+def test_default_is_rya_weights(predictor):
+    assert predictor.weights == "fp32" and "fp16" not in predictor.describe()
+
+
+def test_fp16_weights_are_close_but_opt_in(predictor, cases):
+    fp16 = UnreliabilityPredictor(predictor.paths, weights="fp16")
+    assert "fp16" in fp16.describe()
+    x, y, qs = _unzip(cases)
+    with np.errstate(invalid="ignore", divide="ignore"):
+        ref = np.column_stack(predictor.predict_batch(x, y, qs))
+        got = np.column_stack(fp16.predict_batch(x, y, qs))
+        one = np.array(fp16.predict(x[0], y[0], qs[0]))          # single-row path uses fp16 too
+    np.testing.assert_allclose(got, ref, rtol=1e-2, equal_nan=True)
+    np.testing.assert_allclose(one, got[0], rtol=1e-6)
+
+
+def test_unknown_weights_rejected(predictor):
+    with pytest.raises(ValueError, match="weights"):
+        UnreliabilityPredictor(predictor.paths, weights="int8")
+
+
+def test_export_model_writes_smaller_batch_ready_file(predictor, tmp_path):
+    import onnxruntime as ort
+
+    from scrp_toolkit.cli import main
+
+    out = tmp_path / "model.onnx"
+    project_root = Path(predictor.paths.pmatrices_path).parents[1]     # <root>/Unreliability Matrices/...
+    assert main(["export-model", "--project-root", str(project_root), "--out", str(out)]) == 0
+    assert out.stat().st_size < Path(predictor.paths.onnx_path).stat().st_size
+    session = ort.InferenceSession(str(out))
+    batch = np.random.default_rng(0).random((5, len(predictor.metadata["feature_labels"]))).astype(np.float32)
+    from_file = session.run(None, {session.get_inputs()[0].name: batch})[0]
+    assert from_file.shape == (5, 2)
+
+    # The browser file and the Python fp16 option give the same numbers.
+    fp16 = UnreliabilityPredictor(predictor.paths, weights="fp16")
+    fp16.predict_batch(np.ones((1, 4)), np.ones((1, 4)), ["ry9"])             # builds its session
+    in_python = fp16._batch_session.run(None, {fp16._batch_session.get_inputs()[0].name: batch})[0]
+    np.testing.assert_allclose(from_file, in_python, rtol=1e-6)

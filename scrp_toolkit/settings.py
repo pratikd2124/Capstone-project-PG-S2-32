@@ -42,6 +42,7 @@ DATA_DIR = REPO_DIR / "data"
 REPORT_CSV = REPO_DIR / "baseline_report.csv"   # one row per baseline check (`cli baseline`)
 EDGE_CASE_DIR = REPO_DIR / "edge_cases"         # edge-case files for the input-safety detector
 PROFILE_JSON = REPO_DIR / "profile_report.json" # where the model's time and memory go (`cli profile`)
+BROWSER_MODEL = REPO_DIR / "exp002_fp16.onnx"   # model file for the browser (`cli export-model`)
 
 # ---------------------------------------------------------------------------------------------
 # The worked example: RYA's own, from feature_calculation_portal_script.py

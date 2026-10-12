@@ -15,8 +15,8 @@ single row of 40) with running it on a batch of rows. Finally it measures each s
 to end (``technique_savings``), checks the answers are unchanged, and projects to 200,000
 predictions, the scale the toolkit has to stay affordable at.
 
-Nothing here changes the model or its answers. Every faster version is checked against
-today's output, and the report says whether it is identical.
+Nothing here changes RYA's model file. Every faster or smaller version is checked against
+today's output, and the report gives the largest relative change (0 = identical).
 
     python -m scrp_toolkit.cli profile                 # report on screen + profile_report.json
     python -m scrp_toolkit.cli profile --n-cases 500   # quicker
@@ -271,14 +271,20 @@ def technique_savings(predictor: UnreliabilityPredictor, cases: Sequence, n_pred
     0  today: ``predict`` one item at a time
     1  + network batched: features still one item at a time, then one ONNX call per batch
     2  + features batched: ``predict_batch`` (both stages on whole columns)
+    3  + fp16 weights: ``predict_batch`` on EXP002 stored as 16-bit (opt-in, for the browser)
 
-    ``identical`` says whether every output matches today's exactly (NaN == NaN).
+    ``max_rel_change`` is the largest relative change in shape or rate against today's
+    output (0 = identical; rows 0-2 are identical on the M2, last-bit differences possible
+    on other CPUs). ``model_mb`` is the size of the model file each row runs.
     """
+    from .inference import onnx_model_bytes
+
     labels = predictor.metadata["feature_labels"]
     x = np.array([c[0] for c in cases])
     y = np.array([c[1] for c in cases])
     qs = [c[2] for c in cases]
     clock = time.perf_counter
+    fp16 = UnreliabilityPredictor(predictor.paths, weights="fp16")
 
     def network_batched_only():
         vecs = np.stack([_scaled_vector(predictor, a, b, q) for a, b, q in cases])
@@ -287,22 +293,34 @@ def technique_savings(predictor: UnreliabilityPredictor, cases: Sequence, n_pred
         return (np.array([predictor._reverse_normalise(r[0], "shape") for r in raw]),
                 np.array([predictor._reverse_normalise(r[1], "rate") for r in raw]))
 
+    fp32_mb = os.path.getsize(predictor.paths.onnx_path) / 2 ** 20
+    fp16_mb = len(onnx_model_bytes(predictor.paths.onnx_path, weights="fp16")) / 2 ** 20
     methods = [
         ("0 today: predict() one item at a time",
-         lambda: tuple(np.array(v) for v in zip(*[predictor.predict(a, b, q) for a, b, q in cases]))),
-        ("1 + network batched", network_batched_only),
-        ("2 + features batched (predict_batch)", lambda: predictor.predict_batch(x, y, qs)),
+         lambda: tuple(np.array(v) for v in zip(*[predictor.predict(a, b, q) for a, b, q in cases])), fp32_mb),
+        ("1 + network batched", network_batched_only, fp32_mb),
+        ("2 + features batched (predict_batch)", lambda: predictor.predict_batch(x, y, qs), fp32_mb),
+        ("3 + fp16 weights (opt-in)", lambda: fp16.predict_batch(x, y, qs), fp16_mb),
     ]
-    predictor.predict_batch(x[:10], y[:10], qs[:10])              # warm-up (builds the session)
+    predictor.predict_batch(x, y, qs)                             # warm-up at full size: builds the
+    fp16.predict_batch(x, y, qs)                                  # sessions and their memory
     rows, reference = [], None
-    for name, run in methods:
-        t0 = clock()
-        out = np.column_stack(run())
-        us = (clock() - t0) / len(cases) * 1e6
+    for name, run, mb in methods:
+        # A batched run over 2,000 items takes ~20 ms, where timer noise is +-25%; repeat the
+        # fast methods and keep the best of 3. The slow ones (~1 s) are measured once.
+        times = []
+        while len(times) < 3 and sum(times) < 0.5:
+            t0 = clock()
+            out = np.column_stack(run())
+            times.append(clock() - t0)
+        us = min(times) / len(cases) * 1e6
         if reference is None:
             reference = out
-        same = bool(np.array_equal(out, reference, equal_nan=True))
-        rows.append({"technique": name, "us_per_prediction": us, "identical": same})
+        both = np.isfinite(out) & np.isfinite(reference)
+        rel = np.abs(out[both] - reference[both]) / np.abs(reference[both])
+        same_nan = bool(np.array_equal(np.isnan(out), np.isnan(reference)))
+        rows.append({"technique": name, "us_per_prediction": us, "model_mb": mb,
+                     "max_rel_change": float(rel.max()) if same_nan else float("nan")})
 
     df = pd.DataFrame(rows)
     df["speed_up_vs_today"] = df["us_per_prediction"].iloc[0] / df["us_per_prediction"]
@@ -388,7 +406,7 @@ def print_report(result: dict) -> None:
         print()
 
         print(f"Savings per technique, measured on {result['n_cases']:,} items, projected to {result['scale']:,}")
-        print(result["techniques"].to_string(index=False))
+        print(result["techniques"].to_string(index=False, formatters={"max_rel_change": "{:.1e}".format}))
 
 
 def to_json_dict(result: dict) -> dict:

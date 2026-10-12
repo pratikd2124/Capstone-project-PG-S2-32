@@ -46,4 +46,8 @@ def test_profile_command_writes_report(project, tmp_path):
     report = json.loads(out.read_text())
     assert set(report["stages_us"]) >= {"features", "normalise", "network", "reverse_normalise", "predict_total"}
     assert report["max_abs_diff_vs_onnx"]["onnx_batched"] == 0.0
-    assert len(report["techniques"]) == 3 and all(t["identical"] for t in report["techniques"])
+    techniques = report["techniques"]
+    assert len(techniques) == 4
+    assert all(t["max_rel_change"] < 1e-6 for t in techniques[:3])     # batching: same answers
+    assert techniques[3]["max_rel_change"] < 1e-2                       # fp16 weights: close
+    assert techniques[3]["model_mb"] < techniques[0]["model_mb"]
