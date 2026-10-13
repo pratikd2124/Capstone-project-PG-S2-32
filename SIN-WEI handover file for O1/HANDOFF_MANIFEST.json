@@ -1,0 +1,26 @@
+{
+  "owner": "SIN-WEI SU",
+  "objective": "Objective 1 - Pre-Inference Input Validation and Neural Network Compatibility Screening",
+  "handoff_files_created_here": [
+    "o1_screening.py",
+    "O1_README.md",
+    "O1_demo_cases.json",
+    "integration_example.py",
+    "HANDOFF_MANIFEST.json"
+  ],
+  "artifacts_user_should_copy_from_local_project": [
+    "O1_07_compatibility_detector_v1.joblib",
+    "O1_07_compatibility_detector_v1_metadata.json",
+    "O1_07_integration_validation_results.csv",
+    "O1_classifier_inputs_unlabelled.csv",
+    "O1_07_detector_integration.ipynb",
+    "O1_08_training_space_and_descriptor_alignment.ipynb"
+  ],
+  "status": "handoff-ready prototype component",
+  "notes": [
+    "Training-space distance is diagnostic only; no hard cutoff is applied.",
+    "Confirm boundary-instance x/y interface with team lead.",
+    "Confirm authoritative matrix/item count before RYA presentation.",
+    "Confirm P-matrix row-sum tolerance and matrix source with RYA/team."
+  ]
+}
