@@ -1,0 +1,7 @@
+test_name,expected_route,actual_route,passed,reason,incompatibility_probability,gamma_shape,gamma_rate
+safe_ry9,use_gamma_nn,use_gamma_nn,True,,4.4769496425703704e-05,9.970475608021188,20.926446972942113
+incompatible_ry24,fallback_required,fallback_required,True,,0.9999998970793879,,
+negative_count,invalid_input,invalid_input,True,Negative category counts are not allowed.,,,
+zero_total_group,invalid_input,invalid_input,True,Both groups must contain at least one observation.,,,
+invalid_P_shape,invalid_input,invalid_input,True,P_matrix must be 4x4.,,,
+invalid_P_row_sums,invalid_input,invalid_input,True,P_matrix row sums deviate too far from 1. Maximum error = 0.040000,,,
