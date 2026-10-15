@@ -1,182 +1,272 @@
-# Pratik — Standalone Robustness, Sensitivity and Bayesian Analysis
+# GemFinder Statistical Core Refinement — Clean Final Pipeline V2
 
-This folder contains my **independent capstone contribution** for the RYA/GemFinder statistical-core project. It intentionally **does not import or modify `scrp_toolkit`** and can be developed on the `pratik` branch before the team's branches are merged.
+## The project in one minute
 
-The implementation reads the original RYA assets directly and reproduces the feature formulas required by the shipped EXP002 model.
+GemFinder compares survey response distributions.
 
-## Scope
+The existing EXP002 model predicts a Gamma distribution for the scaled `d_hat_norm` sampling behaviour. Before using that model, this pipeline checks whether a comparison looks like data the model was trained to understand. SAFE comparisons use the production EXP002 path. WARN/REJECT comparisons are visibly routed toward fallback inference; WARN rows may still keep an EXP002 estimate for research evaluation, but that does not make them production-safe.
 
-The standalone analysis covers four parts:
+The pipeline also tests how unreliability-matrix (`rho`) assumptions affect EXP002. Separately, a Bayesian evaluation represents uncertainty in the observed response proportions using probability distributions rather than only point estimates. The Bayesian branch is evaluation-only and is not automatically deployed as a replacement for EXP002.
 
-1. **Unreliability-matrix sensitivity** — vary the off-diagonal error mass of a question's unreliability matrix by controlled amounts (default ±1%, ±5%, ±10%), renormalise each row, and measure how matrix asymmetry changes.
-2. **EXP002 propagation** — pass the perturbed matrices through the original `EXP002_nn_optimal_epoch.onnx` model and track changes in Gamma shape, rate, mean (`shape / rate`) and 95th percentile.
-3. **Sample-size sensitivity** — preserve approximately the same Pre/Post response proportions while changing `n` from small to very large values, then record changes in EXP002 output and which features move outside its stored training range.
-4. **Bayesian alternative and robustness checks** — use Dirichlet posterior draws for the Pre/Post four-category response distributions, map them through the same scaled `d_hat_norm` formula used in the original R simulation, report a 95% credible interval, and classify unusual model inputs as `SAFE`, `WARN`, or `REJECT`.
+## Folder structure
 
-## Why this is independent
+```text
+pipeline_v2/
+├── config.py
+├── common.py
+├── 01_prepare_comparisons.py
+├── 02_screen_inputs.py
+├── 03_standard_exp002.py
+├── 04_fallback_inference.py
+├── 05_uncertainty_analysis.py
+├── 06_bayesian_evaluation.py
+├── 07_historical_benchmark.py
+├── 08_compare_and_report.py
+├── run_pipeline.py
+├── requirements.txt
+├── results/
+├── figures/
+│   ├── final/
+│   └── debug/
+└── README.md
+```
 
-There are **no imports from `scrp_toolkit`**. The shared logic is in `standalone_common.py` and reads these original RYA files directly:
+## Source assets expected
 
+The code searches recursively under `--assets-root` for:
+
+- `RY25_PreMay10.csv`
+- `RY25_PostMay10.csv`
 - `unreliability-matrices.json`
 - `EXP002.json`
 - `EXP002_nn_optimal_epoch.onnx`
 - `B_matrix.txt`
+- optional `instance_data/*.csv` training instances
 
-The analysis does not retrain or overwrite EXP002 and does not edit customer data.
+You can either extract the supplied archives yourself or place the zip archives under the assets root. The pipeline can extract only the required members into `pipeline_v2/.asset_cache/`. The original archives and original raw/model files are never modified.
 
-## Required asset layout
-
-The files can be anywhere below the repository root because the code searches recursively. For example:
+A convenient layout is:
 
 ```text
-repo/
-├── final_network_July15_22/
-│   ├── final_code/B_matrix.txt
-│   └── final_network_model/
-│       ├── EXP002.json
-│       └── EXP002_nn_optimal_epoch.onnx
-├── Unreliability Matrices/
-│   └── unreliability-matrices.json
-├── standalone_common.py
-├── 01_prepare_data.py
-├── 02_matrix_sensitivity.py
-├── 03_propagate_to_network.py
-├── 04_bayesian_minimal_effect.py
-├── 05_compare_methods.py
-└── 06_input_robustness.py
+data/
+├── Data.zip
+├── Unreliability Matrices.zip
+└── final_network_July15_22.zip
 ```
 
-If the assets are elsewhere, pass `--assets-root PATH` or set:
-
-```bash
-set RYA_ASSETS_DIR=C:\path\to\assets
-```
-
-On macOS/Linux:
-
-```bash
-export RYA_ASSETS_DIR=/path/to/assets
-```
-
-## Setup
+## Installation
 
 ```bash
 python -m venv .venv
+# Windows: .venv\Scripts\activate
+# macOS/Linux: source .venv/bin/activate
+pip install -r pipeline_v2/requirements.txt
 ```
 
-Windows:
+`onnxruntime` is required because the existing EXP002 ONNX model is used directly. The model is not retrained or changed.
+
+## One-command execution
 
 ```bash
-.venv\Scripts\activate
+python pipeline_v2/run_pipeline.py --assets-root data
 ```
 
-macOS/Linux:
+For a quicker development run you can reduce Bayesian draws without changing the production default in `config.py`:
 
 ```bash
-source .venv/bin/activate
+python pipeline_v2/run_pipeline.py --assets-root data --draws 2000
 ```
 
-Install dependencies:
+If genuine test-retest transition counts later become available:
 
 ```bash
-pip install -r requirements.txt
+python pipeline_v2/run_pipeline.py \
+  --assets-root data \
+  --transition-counts data/real_transition_counts.csv
 ```
 
-## Run order
+Do **not** supply Pre/Post survey exports as transition counts.
 
-### 1. Prepare controlled scenarios
+## File-by-file explanation
 
-```bash
-python 01_prepare_data.py
-```
+### `config.py`
+Central user-adjustable settings. `OFFICIAL_EPSILON = None` is intentional; the pipeline does not invent an official minimal-effect boundary.
 
-This uses the worked `ry9` example (`Pre=[40,52,7,14]`, `Post=[9,17,54,12]`) by default. No raw student-level CSV is needed.
+### `common.py`
+Shared tested mathematical and engineering logic: asset discovery, one-time rho row normalisation for historical rounding, EXP002 feature construction, training-range checks, ONNX inference, original `d_hat_norm`, Dirichlet posterior sampling, rho perturbation, and utility functions.
 
-### 2. Matrix sensitivity
-
-```bash
-python 02_matrix_sensitivity.py --assets-root .
-```
-
-The perturbation changes total off-diagonal error probability while preserving the relative pattern among off-diagonal cells. Each row remains a valid probability vector.
-
-### 3. Propagate sensitivity through EXP002
-
-```bash
-python 03_propagate_to_network.py --assets-root .
-```
-
-Outputs both sample-size and matrix sensitivity results. The ONNX model and its saved min/max scaling remain unchanged.
-
-### 4. Bayesian alternative
-
-```bash
-python 04_bayesian_minimal_effect.py --assets-root .
-```
-
-The default prior is symmetric Dirichlet(0.5, 0.5, 0.5, 0.5). Posterior draws are converted to the same **scaled `d_hat_norm`** formula used in RYA's simulation code. The output includes posterior mean, median, SD, 95% credible interval and `P(d_hat_norm > epsilon)` for a user-specified exploratory effect threshold.
-
-Example with a different threshold:
-
-```bash
-python 04_bayesian_minimal_effect.py --assets-root . --epsilon 0.10 --draws 50000
-```
-
-**Important:** this Bayesian analysis is an experimental uncertainty-aware alternative. It is not claimed to be a complete Bayesian reimplementation of RYA's original minimal-effects boundary test.
-
-### 5. Compare outputs
-
-```bash
-python 05_compare_methods.py
-```
-
-### 6. Robustness / edge cases
-
-```bash
-python 06_input_robustness.py --assets-root .
-```
-
-The robustness script tests normal input, zero sample sizes, one respondent, degenerate single-category responses, a missing category, strongly imbalanced Pre/Post sizes, very large samples, and a six-option CHS item where available.
-
-## Outputs
-
-Generated files are written to:
+The EXP002 output preprocessing preserves the original training transformation. During training the Gamma rate was transformed as:
 
 ```text
-Analysis/results/
-Analysis/figures/
+rate_scaled = 2 * beta / (1/n_X + 1/n_Y)
 ```
 
-Main result files include:
+so the pipeline reverses this after ONNX prediction:
 
 ```text
-matrix_sensitivity.csv
-sample_size_sensitivity.csv
-matrix_sensitivity_network.csv
-bayesian_dhat_analysis.csv
-method_comparison.csv
-input_robustness.csv
-comparison_summary.md
+beta = rate_scaled * 0.5 * (1/n_X + 1/n_Y)
 ```
 
-## Interpretation of sensitivity analysis
-
-The **matrix sensitivity analysis** asks whether EXP002's fitted retest distribution is stable when assumptions about response unreliability change slightly.
-
-The **sample-size sensitivity analysis** asks whether the predicted Gamma distribution remains stable when the response pattern stays similar but the number of respondents changes. It also explicitly records features outside the min/max values stored with EXP002. A model can still return a number outside this training range, so those cases are labelled `WARN` rather than silently treated as normal.
-
-`shape / rate` is reported as the **mean of the fitted Gamma distribution of scaled `d_hat_norm`**. It should not be described on its own as the complete minimal-effect threshold. The 95th percentile is also reported as a useful upper-tail summary of the fitted distribution.
-
-## Relationship to the team baseline
-
-This branch is intended to remain independent while development is ongoing. Later, the team can compare these standalone results against the verified baseline implementation after branches are merged. That gives a useful validation step without requiring any team member to modify another person's branch now.
-
-## Suggested contribution statement
-
-> Pratik developed an independent robustness-analysis implementation for the existing RYA/GemFinder statistical core. The work evaluates sensitivity to unreliability-matrix assumptions and sample-size extrapolation, propagates those changes directly through the original EXP002 ONNX model, identifies unsafe or out-of-training-range inputs, and implements an exploratory Bayesian uncertainty analysis on the same scaled d_hat metric, without modifying the team's baseline branch.
-
-## Suggested commit message
+Then:
 
 ```text
-Add standalone EXP002 sensitivity robustness and Bayesian analysis
+Gamma mean = alpha / beta
 ```
+
+where `alpha` is Gamma shape and `beta` is Gamma rate.
+
+### `01_prepare_comparisons.py`
+Builds real within-dataset subgroup comparisons. Defaults to grade 4 vs 7, 11 vs 6, and 12 vs 5 in RY25 Post. It does not compare the entire Pre file with the entire Post file.
+
+### `02_screen_inputs.py`
+Checks rho validity and EXP002 compatibility. Stored EXP002 min/max feature ranges are used directly. If the supplied training instance CSVs are available, the real training sample-size-ratio range is derived from them rather than guessed.
+
+Statuses mean:
+
+- `SAFE`: validation and stored compatibility checks passed.
+- `WARN`: research evaluation may continue, but at least one compatibility feature is outside the stored range or a rho structural warning exists.
+- `REJECT`: input is invalid for trustworthy EXP002 execution.
+
+These are **not significance decisions**.
+
+### `03_standard_exp002.py`
+Runs the existing ONNX network for SAFE and WARN comparisons. REJECT rows are not presented as trustworthy network results. Reports `alpha`, `beta`, Gamma mean, Gamma q95, runtime, and training-range status.
+
+### `04_fallback_inference.py`
+Contains the routing interface but deliberately does not invent a fallback method. Until the team's real fallback implementation is integrated, flagged production cases say:
+
+```text
+NOT INTEGRATED — awaiting team fallback implementation
+```
+
+### `05_uncertainty_analysis.py`
+Runs two transparent sensitivity analyses on one representative historical comparison:
+
+1. rho off-diagonal error-mass perturbations `-10%, -5%, -1%, 0%, +1%, +5%, +10%`;
+2. sample-size sensitivity while keeping response proportions approximately fixed.
+
+At 0% rho perturbation the matrix is exactly the normalised baseline matrix.
+
+### `06_bayesian_evaluation.py`
+Evaluation-only Bayesian branch.
+
+#### Level A — response-distribution uncertainty
+
+For each group:
+
+```text
+p_A | data ~ Dirichlet(prior + counts_A)
+p_B | data ~ Dirichlet(prior + counts_B)
+```
+
+The Dirichlet-multinomial posterior is conjugate, so this posterior is exact. Monte Carlo draws are then propagated through the nonlinear `d_hat_norm` formula. This is **not variational inference**.
+
+Outputs include posterior mean, median, SD, 95% credible interval, and exploratory threshold exceedance probabilities. If no official epsilon is supplied, diagnostic thresholds come from historical observed `d_hat_norm` quantiles and are explicitly labelled non-official.
+
+#### Level B — rho uncertainty
+
+The script searches only for genuine transition-count formats such as:
+
+```text
+item, initial_response, retest_response, count
+```
+
+or `item,c11,...,c44`, or a JSON mapping items to 4x4 integer count matrices.
+
+If those counts are missing, it reports:
+
+```text
+RHO UNCERTAINTY: NOT IDENTIFIABLE FROM AVAILABLE DATA
+```
+
+and creates `results/rho_data_requirement_template.csv` with blank count cells. It never converts rho probabilities to pseudo-counts and never treats Pre/Post data as test-retest data.
+
+### `07_historical_benchmark.py`
+Joins all per-comparison outputs into the primary historical evaluation dataset `results/historical_benchmark.csv`.
+
+### `08_compare_and_report.py`
+Creates `results/final_pipeline_results.csv`, `results/final_summary.md`, and approximately six final figures.
+
+## Expected core outputs
+
+```text
+results/comparisons.csv
+results/screening_results.csv
+results/exp002_results.csv
+results/fallback_results.csv
+results/rho_sensitivity.csv
+results/sample_size_sensitivity.csv
+results/bayesian_response_results.csv
+results/diagnostic_thresholds.csv
+results/rho_data_requirement_template.csv        # when rho counts are absent
+results/bayesian_rho_summary.md
+results/historical_benchmark.csv
+results/final_pipeline_results.csv
+results/final_summary.md
+```
+
+Final figures:
+
+```text
+figures/final/01_pipeline_screening_status.png
+figures/final/02_flag_reasons.png
+figures/final/03_rho_sensitivity.png
+figures/final/04_bayesian_uncertainty.png
+figures/final/05_historical_effect_distribution.png
+figures/final/06_posterior_threshold_probability.png
+```
+
+## Interpretation of the six final figures
+
+1. **Pipeline screening status** — how many historical comparisons are SAFE, WARN, or REJECT for model compatibility.
+2. **Why comparisons were flagged** — which input features most often caused warnings; this is a model-domain diagnostic, not a statistical-significance chart.
+3. **Rho sensitivity** — how EXP002 Gamma mean and q95 move when off-diagonal unreliability mass is changed around the baseline rho assumption.
+4. **Bayesian uncertainty** — representative observed `d_hat_norm` values together with posterior means and 95% credible intervals while rho is fixed.
+5. **Historical effect distribution** — empirical distribution of observed historical `d_hat_norm`; dashed lines are exploratory diagnostic quantiles, not official GemFinder boundaries.
+6. **Posterior threshold probability** — representative probabilities `P(d_hat_norm > epsilon | data)` for those exploratory thresholds.
+
+## Bayesian terminology in simple language
+
+- **Prior**: the probability model used before observing the current group counts.
+- **Posterior**: the updated probability model after combining the prior with observed counts.
+- **Dirichlet distribution**: a distribution over possible four-category response-percentage vectors.
+- **Posterior draw**: one plausible response-percentage vector sampled from the posterior.
+- **Posterior mean**: the average of posterior draws for the quantity of interest.
+- **Posterior probability**: the fraction of posterior mass satisfying a statement such as `d_hat_norm > epsilon`.
+- **Credible interval**: an interval containing a stated proportion of posterior uncertainty, here 95%.
+- **Minimal-effect threshold epsilon**: the boundary used to define a minimal-effect decision; no official value is assumed here.
+- **Rho uncertainty**: uncertainty about the unreliability/transition probabilities themselves.
+- **Response-distribution uncertainty**: uncertainty about the underlying response percentages given finite observed counts.
+
+`EXP002 alpha` and `Dirichlet prior_alpha` are completely different quantities. EXP002 `alpha` is the fitted Gamma **shape** parameter. Dirichlet `prior_alpha` is a prior concentration used for response probabilities.
+
+## Production path versus evaluation-only work
+
+```text
+Production architecture:
+comparison -> screening -> SAFE -> EXP002
+                         -> flagged -> fallback required
+
+Evaluation-only branches:
+- WARN EXP002 research evaluation
+- rho sensitivity
+- sample-size sensitivity
+- Bayesian response uncertainty
+- optional Bayesian rho uncertainty
+```
+
+The Bayesian branch does not automatically replace the production method.
+
+## Requirements compliance and current limitations
+
+The pipeline automatically writes a compliance table into `results/final_summary.md` based on what actually ran. Important expected limitations with the supplied assets are:
+
+- fallback implementation: external/team-owned unless separately supplied;
+- Bayesian rho uncertainty: data-blocked unless genuine paired test-retest transition counts are supplied;
+- official Bayesian minimal-effect decision: waiting for an official epsilon;
+- existing-vs-Bayesian decision agreement: not calculated unless the exact existing binary decision rule is supplied;
+- variational inference: not claimed for the current conjugate Dirichlet components, because an exact posterior exists and Monte Carlo is only used for nonlinear propagation.
+
+## Statistical rules enforced by the code
+
+The implementation does not invent test-retest counts, does not create pseudo-counts from rho probabilities, does not call diagnostic thresholds official, does not equate EXP002 Gamma means with Bayesian `d_hat_norm` posterior means, does not interpret SAFE/WARN as significance, does not rename Monte Carlo sampling as variational inference, and does not silently trust out-of-training-range EXP002 predictions.
