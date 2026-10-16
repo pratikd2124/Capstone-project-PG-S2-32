@@ -1,0 +1,47 @@
+{
+  "demo_A_normal_case": {
+    "purpose": "Normal case should pass O1 and continue to Gamma NN.",
+    "question": "ry9",
+    "observed_x": [
+      40,
+      52,
+      7,
+      14
+    ],
+    "observed_y": [
+      9,
+      17,
+      54,
+      12
+    ],
+    "expected_route": "pass_to_gamma_nn",
+    "expected_reason": "screening_passed",
+    "previously_verified_incompatibility_probability_approx": 4.4769496425703704e-05
+  },
+  "demo_B_classifier_fallback": {
+    "purpose": "Known Gamma-incompatible non-degenerate case should be routed by classifier.",
+    "exp_code": "orthog_B_3_large_classes_2166",
+    "question": "ry24",
+    "n_X": 6,
+    "n_Y": 5215,
+    "expected_route": "fallback_required",
+    "expected_reason": "compatibility_classifier"
+  },
+  "demo_C_degenerate_safeguard": {
+    "purpose": "Demonstrate provisional original-pair degeneracy safeguard.",
+    "observed_x": [
+      10,
+      0,
+      0,
+      0
+    ],
+    "observed_y": [
+      2,
+      3,
+      4,
+      1
+    ],
+    "expected_route": "fallback_required",
+    "expected_reason": "original_pair_degenerate"
+  }
+}

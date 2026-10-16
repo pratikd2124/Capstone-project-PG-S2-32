@@ -1,0 +1,32 @@
+{
+  "owner": "SIN-WEI SU",
+  "objective": "Objective 1 - Pre-Inference Input Validation and Neural Network Compatibility Screening",
+  "version": "v2-prototype-ready",
+  "confirmed_facts": {
+    "matrix_total": 59,
+    "matrix_in_scope_4x4": 53,
+    "matrix_out_of_scope": 6,
+    "detector_threshold": 0.1,
+    "high_confidence_cases": 477,
+    "compatible_cases": 333,
+    "incompatible_cases": 144
+  },
+  "new_v2_logic": {
+    "original_pair_degeneracy_safeguard": true,
+    "classifier_uses_exact_nn_pair": true,
+    "nn_pair_defaults_to_observed_pair_if_missing": true,
+    "boundary_transform_implemented_inside_o1": false
+  },
+  "o1_09_summary": {
+    "classifier_only_recall_s_0_10_percent": 90.277778,
+    "combined_recall_s_0_10_percent": 99.305556,
+    "combined_caught_s_0_10": "143/144",
+    "compatible_fallback_rate_tested_shrink_range_percent": "approximately 15-17"
+  },
+  "open_questions_for_RYA": [
+    "Where exactly does the production boundary transformation occur?",
+    "What production epsilon value is used?",
+    "Does the portal expose the original observed X/Y before boundary transformation?",
+    "Can RYA provide the current JavaScript implementation of the boundary step?"
+  ]
+}
