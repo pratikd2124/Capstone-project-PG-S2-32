@@ -23,6 +23,7 @@ from .o1.o1_screening import O1ScreeningGate, calculate_P_structure_descriptors
 O1_DIR = Path(__file__).parent / "o1"
 TRAIN_N_MIN, TRAIN_N_MAX = 5, 9940          # docs/findings.md: training group sizes 5-9,819 / 5-9,940
 ROW_SUM_TOL = 0.020001                      # SIN-WEI's tolerance; warn above 1e-6, reject above this
+SMALL_GROUP_N, SMALL_GROUP_RATIO = 30, 20.0  # integration rule (see screen())
 OUT_OF_SCOPE_ITEMS = {f"chs{i}" for i in range(1, 7)}
 
 
@@ -94,8 +95,15 @@ def validate_rho(req: ComparisonRequest) -> RhoCheck:
     return RhoCheck(status, tuple(reasons), err, desc["certainty_P"], desc["rya_asymmetry_P"])
 
 
-def screen(req: ComparisonRequest, rho_check: RhoCheck, bp: BoundaryPair | None, gate: Gate) -> ScreeningResult:
-    """Stage 1b. Route PASS / FLAGGED / REJECT, screening both pairs."""
+def screen(req: ComparisonRequest, rho_check: RhoCheck, bp: BoundaryPair | None, gate: Gate,
+           small_group_n: int | None = SMALL_GROUP_N, small_group_ratio: float = SMALL_GROUP_RATIO) -> ScreeningResult:
+    """Stage 1b. Route PASS / FLAGGED / REJECT, screening both pairs.
+
+    ``small_group_n``: integration rule added after validation (17 Oct). A group smaller than
+    this, compared with one at least ``small_group_ratio`` times larger, goes to the fallback
+    even if the classifier passes it: at n of about 25 vs 9,000 the classifier passes while
+    EXP002's q95 is about 40% too small. None switches the rule off (SIN-WEI's gate only).
+    """
     if rho_check.status == "reject":
         return ScreenResultReject(rho_check.reasons)
     obs = gate.screen_case(req.x, req.y, req.P, question=req.item)
@@ -120,6 +128,9 @@ def screen(req: ComparisonRequest, rho_check: RhoCheck, bp: BoundaryPair | None,
     outside = not (TRAIN_N_MIN <= n <= TRAIN_N_MAX and TRAIN_N_MIN <= m <= TRAIN_N_MAX)
     if outside:
         reasons.append(f"group sizes {int(n)}/{int(m)} outside training range {TRAIN_N_MIN}-{TRAIN_N_MAX}")
+    small, big = min(n, m), max(n, m)
+    if small_group_n is not None and small < small_group_n and big / small >= small_group_ratio:
+        reasons.append(f"small group ({int(small)}) against a group {big / small:.0f}x larger")
     route = FLAGGED if reasons else PASS
     return ScreeningResult(route, tuple(reasons) or ("screening passed",), p_obs, p_bnd, gate.threshold,
                            outside, {"o1_observed": obs})

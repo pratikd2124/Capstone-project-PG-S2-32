@@ -35,6 +35,8 @@ class PipelineConfig:
     rho_delta: float = 0.05
     uncertainty_draws: int = 1500     # simulator draws per rho variant on the fallback route
     screen_threshold: Optional[float] = None   # None = SIN-WEI's 0.10
+    small_group_n: Optional[int] = 30          # integration rule; None = SIN-WEI's gate only
+    small_group_ratio: float = 20.0
 
 
 class Pipeline:
@@ -75,7 +77,7 @@ class Pipeline:
         timings["boundary_ms"] = 1000 * (time.perf_counter() - t)
 
         t = time.perf_counter()
-        sr = screen(req, rc, bp, self.gate)
+        sr = screen(req, rc, bp, self.gate, self.cfg.small_group_n, self.cfg.small_group_ratio)
         timings["screen_ms"] = 1000 * (time.perf_counter() - t)
         if sr.route == REJECT:
             return PipelineResult(req, None, None, RED, None, list(sr.reasons), rc, sr, bp,

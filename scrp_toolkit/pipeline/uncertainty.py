@@ -20,25 +20,18 @@ from dataclasses import replace
 
 
 def perturb_rho_offdiagonal_mass(rho: np.ndarray, relative_change: float) -> np.ndarray:
-    """Pratik's perturbation (pipeline_v2/common.py): scale each row's off-diagonal mass."""
-    base = np.asarray(rho, dtype=float)
-    if relative_change == 0:
-        return base.copy()
-    out = base.copy()
-    for i in range(4):
-        off = [j for j in range(4) if j != i]
-        out[i, off] = base[i, off] * (1.0 + relative_change)
-        out[i, i] = 1.0 - out[i, off].sum()
-        if out[i, i] < 0:
-            raise ValueError("perturbation makes a diagonal probability negative")
-    return out
+    """Pratik's perturbation, called from his own code (o3/common.py, unchanged)."""
+    from .o3.loader import pratik_modules
+    return pratik_modules()[1].perturb_rho_offdiagonal_mass(rho, relative_change)
 
 
 def rho_posterior_draws(counts: np.ndarray, draws: int, prior: float = 0.5, seed: int = 7) -> np.ndarray:
-    """Dirichlet posterior draws of rho from test-retest transition counts, shape (draws, 4, 4)."""
-    counts = np.asarray(counts, dtype=float)
-    rng = np.random.default_rng(seed)
-    return np.stack([np.stack([rng.dirichlet(counts[j] + prior) for j in range(4)]) for _ in range(draws)])
+    """Dirichlet posterior draws of rho from test-retest counts, shape (draws, 4, 4).
+
+    Pratik's ``_sample_rho`` (o3/06_bayesian_evaluation.py, unchanged).
+    """
+    from .o3.loader import pratik_modules
+    return pratik_modules()[2]._sample_rho(np.asarray(counts, dtype=float), draws, prior, seed)
 
 
 def rho_variants(req: ComparisonRequest, delta: float = 0.05, n_posterior: int = 20) -> tuple[List[np.ndarray], str]:

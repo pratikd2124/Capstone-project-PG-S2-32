@@ -21,6 +21,7 @@ request (counts X, Y + rho)
 python -m scrp_toolkit.cli pipeline-demo                 # 10 synthetic cases: direct vs robust vs truth
 python -m scrp_toolkit.cli pipeline-demo --weights fp16  # same with the browser model
 python -m scrp_toolkit.cli pipeline-benchmark --cases 400
+python -m scrp_toolkit.pipeline.bayes_eval               # Bayesian analogue vs pipeline (not deployed)
 pytest tests/test_pipeline.py
 ```
 
@@ -50,6 +51,8 @@ res.summary()
 | `benchmark.py` | - | direct vs robust vs simulated truth; fallback candidate comparison |
 | `o1/` | - | SIN-WEI's gate (unchanged) + detector exported to `detector_params.json` |
 | `o2/` | - | Shuyun's `backup_methods.py` (unchanged) |
+| `o3/` | - | Pratik's `common.py`, `config.py`, `06_bayesian_evaluation.py` (unchanged, branch `pratik` 9f113d6) + `loader.py` to import them |
+| `bayes_eval.py` | eval only | Pratik's Bayesian analogue beside the pipeline; validation of his functions |
 
 ## Decisions taken in the integration
 
@@ -58,6 +61,8 @@ res.summary()
 - **Test mode.** `boundary` (draft paper) by default; `point_null` (Murat's epsilon = 0 stand-in) selectable. Both are provisional until RYA sends the portal code. epsilon = 0.1 is a placeholder.
 - **Detector without scikit-learn.** SIN-WEI's joblib was saved with scikit-learn 1.5.1. Its scaler and logistic-regression coefficients are exported to JSON and run in NumPy; a test checks it matches the joblib to 1e-9.
 - **Rho uncertainty.** If test-retest counts are given, Dirichlet posterior draws of rho; otherwise Pratik's +/-5% error-mass perturbation. The whole test is re-run for each, giving a p-value range.
+- **Small-group rule (added 17 Oct after validation).** A group under 30 compared with one at least 20x larger goes to the fallback even when SIN-WEI's classifier passes it. At n=25 vs 9,000 the classifier passed while EXP002's q95 was about 40% low (demo case C now gives p 0.334 vs truth 0.338, was 0.137). `small_group_n=None` turns it off.
+- **Pratik's code is called, not re-written.** The rho perturbation and rho posterior in `uncertainty.py` now call his functions in `o3/`. His `predict_exp002` (with the rate inversion) is never called.
 - **Flags.** RED = rejected, no p-value. AMBER = fallback used, or the decision flips inside the p-range. GREEN otherwise.
 
 ## Results (synthetic, 17 Oct)
@@ -68,15 +73,28 @@ Benchmark, 400 synthetic comparisons, truth = RYA's simulator with 10,000 draws:
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | 1-2x | 100 | 0% | 98% | 0 | 98% | 0 | 3.2 / 6.6 |
 | 2-10x | 100 | 0% | 96% | 0 | 96% | 0 | 3.2 / 6.6 |
-| 10-100x | 100 | 3% | 97% | 0 | 97% | 0 | 3.2 / 6.5 |
-| 100-2000x | 100 | 82% | 89% | 8 | 98% | 0 | 3.2 / 15.3 |
+| 10-100x | 100 | 5% | 97% | 0 | 97% | 0 | 3.0 / 5.9 |
+| 100-2000x | 100 | 88% | 89% | 8 | 98% | 0 | 2.9 / 13.4 |
 
 Fallback candidates on 32 flagged cases (q95 error vs a 40,000-draw reference): MC empirical 0.9% median (2.0% p90), Weibull 5.8%, Gamma refit 8.6%, EXP002 network 41%. MC empirical costs about 11 ms per flagged call with 4,000 draws.
 
-Caveat: the truth and the fallback use the same simulator (different seeds), so the benchmark shows the network path's error against RYA's own model; it does not test the model itself.
+(Re-run 17 Oct with the small-group rule on.) Caveat: the truth and the fallback use the same simulator (different seeds), so the benchmark shows the network path's error against RYA's own model; it does not test the model itself.
+
+## Objective 3 validation (17 Oct, `bayes_eval.py`)
+
+Pratik's functions check out against the pipeline's maths: his `d_hat_norm` equals ours exactly; Level B with rho held fixed equals Level A exactly; rho posterior rows sum to 1; credible intervals narrow as n grows (1.08, 0.36, 0.11 for n x1, x10, x100).
+
+On the 8 demo cases that reach a test, the Bayesian decision (P(d > epsilon) >= 0.95) agrees with the pipeline on all 8.
+
+Two findings:
+
+- **His 95% credible intervals under-cover at small n.** Coverage of the true d_norm: 0.51 at n=30 vs 30, 0.65 at 25 vs 2,000, 0.90 at 200 vs 200. d_norm is a squared distance, so noise in the answer shares pushes the posterior upward when the true difference is small. Feedback to Pratik.
+- **The boundary test itself is somewhat liberal under RYA's model.** With the true pair exactly on the boundary (400 repeats), the share of "meaningful difference" calls is: 5.0% at n=100 vs 100 with the network; 7-8% when the exact simulated null is used (n=100 vs 100, 400 vs 2,000); 12% at 25 vs 2,000. The network's Gamma has a heavier tail than the simulation, which happens to offset this at moderate n. The cause is that the test plugs the observed answers in as the latent composition, as the portal does. This is the p-value calibration the draft paper left unwritten; it needs a team decision, not a code fix. The Bayesian analogue calls 0.5-2.5% here (conservative).
 
 ## Known gaps (fed back to owners)
 
-- O1: at a classroom of about 25 against a national cohort the classifier passes (p_incompatible about 0.05) while EXP002's q95 is about 40% too small (demo case C).
+- O1: at a classroom of about 25 against a national cohort the classifier passes (p_incompatible about 0.05) while EXP002's q95 is about 40% too small. Covered for now by the small-group rule; the classifier itself should learn it.
+- O3: credible intervals under-cover at small n (above).
+- Method: boundary-test calibration (above).
 - O3: Pratik's `pipeline_v2/common.py` multiplies the network rate by 0.5(1/n + 1/m), which gives the Gamma of the unscaled d_hat, while his `d_hat_norm` is scaled. Not used here.
 - O2: `evaluate_backup_methods.py` imports `legacy_925`, which is not in the repo.

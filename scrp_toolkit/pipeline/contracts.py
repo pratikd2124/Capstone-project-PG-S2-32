@@ -188,6 +188,10 @@ class PipelineResult:
             "epsilon": r.epsilon,
             "p_value": None if self.p_value is None else round(self.p_value, 4),
             "p_range": None if self.uncertainty_range is None else tuple(round(v, 4) for v in self.uncertainty_range),
+            "shape_range": None if self.uncertainty is None or not np.isfinite(self.uncertainty.shape_range[0])
+            else tuple(round(v, 3) for v in self.uncertainty.shape_range),
+            "rate_range": None if self.uncertainty is None or not np.isfinite(self.uncertainty.rate_range[0])
+            else tuple(round(v, 3) for v in self.uncertainty.rate_range),
             "decision": self.decision,
             "flag": self.reliability_flag,
             "flag_reasons": "; ".join(self.flag_reasons),

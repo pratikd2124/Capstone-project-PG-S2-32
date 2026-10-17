@@ -165,3 +165,44 @@ def test_simulator_matches_EXP002_on_ry9():
     assert (shape, rate) == (pytest.approx(9.970475608), pytest.approx(20.926446973))
     sim = simulate_d_hat(x, y, pred.p_matrices["ry9"], 20000, np.random.default_rng(3))
     assert sim.mean() == pytest.approx(shape / rate, rel=0.02)   # rate used as-is
+
+
+# ---- Objective 3 Bayesian analogue (o3/, evaluation only) -------------------------------
+def test_pratik_modules_load_without_leaking_names():
+    import sys
+    from scrp_toolkit.pipeline.o3.loader import pratik_modules
+    cfg, common, b06 = pratik_modules()
+    assert cfg.DIRICHLET_PRIOR_ALPHA == 0.5
+    assert "config" not in sys.modules or sys.modules["config"] is not cfg
+    assert "common" not in sys.modules or sys.modules["common"] is not common
+
+
+def test_pratik_functions_agree_with_pipeline_maths():
+    from scrp_toolkit.pipeline.o3.loader import pratik_modules
+    _, common, b06 = pratik_modules()
+    x, y = np.array([40., 52, 7, 14]), np.array([9., 17, 54, 12])
+    assert common.d_hat_norm(x, y, P_EX, B) == pytest.approx(d_norm(x / x.sum(), y / y.sum(), x.sum(), y.sum(), P_EX), rel=1e-12)
+    a = common.bayesian_d_hat_draws(x, y, P_EX, B, draws=500, prior_alpha=0.5, seed=1)
+    b = common.bayesian_d_hat_draws_with_rho(x, y, np.repeat(P_EX[None], 500, 0), B, prior_alpha=0.5, seed=1)
+    assert np.array_equal(a, b)
+    assert np.allclose(b06._sample_rho(np.full((4, 4), 9.0), 10, 0.5, 0).sum(axis=2), 1)
+
+
+def test_bayesian_result_fields():
+    from scrp_toolkit.pipeline.bayes_eval import bayesian_result
+    r = bayesian_result(R.make("q", [40, 52, 7, 14], [9, 17, 54, 12], P_EX, epsilon=0.1), draws=2000)
+    assert 0 <= r["bayes_P_d_gt_eps"] <= 1 and r["bayes_ci95"][0] <= r["bayes_d_median"] <= r["bayes_ci95"][1]
+    r2 = bayesian_result(R.make("q", [40, 52, 7, 14], [9, 17, 54, 12], P_EX, epsilon=0.1,
+                                rho_transition_counts=np.full((4, 4), 20.0)), draws=2000)
+    assert r2["bayes_level"].startswith("B")
+
+
+def test_small_group_rule(pipes):
+    pred, robust, _ = pipes
+    from scrp_toolkit.pipeline.screen import screen
+    req = R.make("ry9", [5, 6, 8, 6], [2000, 3000, 2500, 1500], pred.p_matrices["ry9"])
+    rc, bp = validate_rho(req), find_boundary(req)
+    on = screen(req, rc, bp, robust.gate, small_group_n=30)
+    off = screen(req, rc, bp, robust.gate, small_group_n=None)
+    assert any("small group" in r for r in on.reasons) and on.route == FLAGGED
+    assert not any("small group" in r for r in off.reasons)

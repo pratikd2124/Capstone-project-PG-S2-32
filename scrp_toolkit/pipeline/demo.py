@@ -45,6 +45,7 @@ def run_demo(project_root="data", epsilon=0.1, weights="fp32", test_mode="bounda
             "d_hat": r.summary()["d_hat_norm"],
             "p_direct": d.p_value, "p_robust": r.p_value, "p_truth": t,
             "p_range": r.uncertainty_range,
+            "shape_range": r.summary()["shape_range"], "rate_range": r.summary()["rate_range"],
             "decision_direct": d.decision, "decision_robust": r.decision,
             "decision_truth": None if not np.isfinite(t) else
             ("meaningful difference" if t < sc.request.alpha else "no meaningful difference shown"),

@@ -63,7 +63,7 @@ def build_scenarios(p_matrices: Dict[str, np.ndarray], instance_dir: str | Path 
                       "FLAGGED -> simulated null -> AMBER; network alone calls a false 'meaningful difference'",
                       R.make("ry9", [2, 1, 2, 3], national, P9, epsilon=epsilon, label="B classroom n=8")))
     s.append(Scenario("C. Classroom (n=25) vs national", "O1 screening",
-                      "KNOWN GAP: screening passes, network p too small (feedback to O1)",
+                      "classifier alone passes it (O1 gap); the small-group rule sends it to the fallback",
                       R.make("ry9", _counts([0.1, 0.25, 0.4, 0.25], 25), national, P9, epsilon=epsilon,
                              label="C classroom n=25")))
     s.append(Scenario("D. Everyone gave one answer", "O1 degeneracy safeguard",
