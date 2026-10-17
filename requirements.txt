@@ -11,6 +11,7 @@ numpy>=2.0,<3
 pandas>=2.2,<4
 torch>=2.5,<3          # network design + training experiments (the CPU build is enough)
 onnxruntime>=1.20,<2   # runs RYA's trained model (EXP002_nn_optimal_epoch.onnx)
+scipy>=1.11,<2         # pipeline: boundary search, Gamma/Weibull tails
 matplotlib>=3.7,<4     # plots
 seaborn>=0.13,<1       # plots
 

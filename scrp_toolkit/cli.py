@@ -206,6 +206,23 @@ def cmd_export_model(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_pipeline_demo(args: argparse.Namespace) -> int:
+    """The integrated pipeline on the synthetic demonstration cases (direct vs robust vs truth)."""
+    from .pipeline import demo
+    argv = ["--project-root", args.project_root, "--epsilon", str(args.epsilon),
+            "--weights", args.weights, "--test-mode", args.test_mode, "--out", args.out]
+    demo.main(argv)
+    return 0
+
+
+def cmd_pipeline_benchmark(args: argparse.Namespace) -> int:
+    """Direct-to-network vs robust pipeline against simulated truth, by size-ratio band."""
+    from .pipeline import benchmark
+    benchmark.main(["--project-root", args.project_root, "--cases", str(args.cases),
+                    "--truth-draws", str(args.truth_draws), "--out", args.out])
+    return 0
+
+
 def cmd_gen_edge_cases(args: argparse.Namespace) -> int:
     """Write the edge-case files for the input-safety detector (see edge_cases.py)."""
     from . import edge_cases
@@ -281,6 +298,21 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--check-response-cases", action="store_true")
     p.set_defaults(func=cmd_gen_edge_cases)
+
+    p = sub.add_parser("pipeline-demo", help="Integrated pipeline on synthetic demonstration cases")
+    _add_common_args(p)
+    p.add_argument("--epsilon", type=float, default=0.1, help="Minimal-effects threshold (provisional)")
+    p.add_argument("--weights", choices=["fp32", "fp16"], default="fp32")
+    p.add_argument("--test-mode", choices=["boundary", "point_null"], default="boundary")
+    p.add_argument("--out", default="pipeline_demo.csv")
+    p.set_defaults(func=cmd_pipeline_demo)
+
+    p = sub.add_parser("pipeline-benchmark", help="Direct vs robust pipeline against simulated truth")
+    _add_common_args(p)
+    p.add_argument("--cases", type=int, default=300)
+    p.add_argument("--truth-draws", type=int, default=10000)
+    p.add_argument("--out", default="pipeline_benchmark.csv")
+    p.set_defaults(func=cmd_pipeline_benchmark)
 
     return parser
 
