@@ -1,90 +1,89 @@
-"""The data passed between pipeline stages.
+"""The small records that the pipeline stages pass to each other.
 
-Every stage receives and returns one of these frozen dataclasses, so each stage can be
-built, tested and swapped on its own. Only ``run.py`` sets the reliability flag and the
-uncertainty range on the final ``PipelineResult``; earlier stages only add evidence.
+Each stage takes one of these in and hands one back, so a stage can be tested or swapped
+on its own. Only the last step (run.py) decides the colour flag and the p-value range.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field, asdict
-from typing import Any, Dict, List, Optional, Tuple
+from dataclasses import dataclass, field
+from typing import Optional
 
 import numpy as np
+from scipy import stats
 
-# Route names (shared by screening and run.py).
-PASS = "PASS"
-FLAGGED = "FLAGGED"
-REJECT = "REJECT"
+# Where screening sends a request.
+PASS, FLAGGED, REJECT = "PASS", "FLAGGED", "REJECT"
+# The flag the user sees.
+GREEN, AMBER, RED = "GREEN", "AMBER", "RED"
 
-# Reliability flags (set only in run.py).
-GREEN = "GREEN"
-AMBER = "AMBER"
-RED = "RED"
+NAN = float("nan")
+
+
+def _tuple(values):
+    return tuple(float(v) for v in values)
 
 
 @dataclass(frozen=True)
 class ComparisonRequest:
-    """One comparison: two groups' answer counts on one four-option item, plus its rho.
+    """One question: do these two groups answer this item differently?
 
-    x_counts, y_counts  answer counts 1..4 for group X (e.g. a classroom) and group Y
-    rho                 4x4 unreliability matrix (row = latent type, column = answer given)
-    epsilon             minimal-effects threshold: H0 is d_norm < epsilon
+    x_counts, y_counts: how many students in each group chose answers 1-4.
+    rho: the item's 4x4 unreliability matrix (row = the student's "real" answer,
+         column = the answer they actually gave).
+    epsilon: the smallest difference that counts as meaningful.
+    rho_transition_counts: optional test-retest counts, used to show how unsure rho is.
     """
     item: str
-    x_counts: Tuple[float, ...]
-    y_counts: Tuple[float, ...]
-    rho: Tuple[Tuple[float, ...], ...]
+    x_counts: tuple
+    y_counts: tuple
+    rho: tuple
     epsilon: float = 0.1
     alpha: float = 0.05
     rho_source: str = "json"
     label: str = ""
-    # Optional genuine test-retest transition counts (4x4) for rho uncertainty (Objective 3).
-    rho_transition_counts: Optional[Tuple[Tuple[float, ...], ...]] = None
+    rho_transition_counts: Optional[tuple] = None
 
     @staticmethod
-    def make(item, x_counts, y_counts, rho, **kw) -> "ComparisonRequest":
-        rc = kw.pop("rho_transition_counts", None)
-        return ComparisonRequest(
-            item=str(item),
-            x_counts=tuple(float(v) for v in x_counts),
-            y_counts=tuple(float(v) for v in y_counts),
-            rho=tuple(tuple(float(v) for v in row) for row in np.asarray(rho, dtype=float)),
-            rho_transition_counts=None if rc is None else tuple(tuple(float(v) for v in r) for r in np.asarray(rc)),
-            **kw,
-        )
+    def make(item, x_counts, y_counts, rho, rho_transition_counts=None, **options):
+        """Build a request from plain lists or arrays."""
+        counts = None if rho_transition_counts is None else tuple(map(_tuple, np.asarray(rho_transition_counts)))
+        return ComparisonRequest(str(item), _tuple(x_counts), _tuple(y_counts),
+                                 tuple(map(_tuple, np.asarray(rho, dtype=float))),
+                                 rho_transition_counts=counts, **options)
 
     @property
-    def x(self) -> np.ndarray:
-        return np.asarray(self.x_counts, dtype=float)
+    def x(self):
+        return np.array(self.x_counts)
 
     @property
-    def y(self) -> np.ndarray:
-        return np.asarray(self.y_counts, dtype=float)
+    def y(self):
+        return np.array(self.y_counts)
 
     @property
-    def P(self) -> np.ndarray:
-        return np.asarray(self.rho, dtype=float)
+    def P(self):
+        return np.array(self.rho)
 
 
 @dataclass(frozen=True)
 class RhoCheck:
-    """Stage 1a: is rho usable? status is 'pass', 'warn' or 'reject'."""
+    """Is rho usable? status is 'pass', 'warn' or 'reject'."""
     status: str
-    reasons: Tuple[str, ...] = ()
-    max_row_sum_error: float = float("nan")
-    certainty: float = float("nan")
-    asymmetry: float = float("nan")
+    reasons: tuple = ()
+    max_row_sum_error: float = NAN
+    certainty: float = NAN
+    asymmetry: float = NAN
 
 
 @dataclass(frozen=True)
 class BoundaryPair:
-    """The pair the minimal-effects test evaluates the null distribution at.
+    """The two groups moved toward each other until their distance is exactly epsilon.
 
-    Group proportions are shrunk toward their midpoint until d_norm = epsilon; group sizes
-    n and m are unchanged. ``shrink`` = 1 means the observed pair itself.
+    The test asks how unusual the observed distance would be if the true distance were
+    only epsilon, so this is where the null distribution is worked out. Group sizes do
+    not change. shrink = 1 means no move.
     """
-    x_counts: Tuple[float, ...]
-    y_counts: Tuple[float, ...]
+    x_counts: tuple
+    y_counts: tuple
     shrink: float
     d_norm_observed: float
     d_norm_boundary: float
@@ -92,66 +91,68 @@ class BoundaryPair:
     note: str = ""
 
     @property
-    def x(self) -> np.ndarray:
-        return np.asarray(self.x_counts, dtype=float)
+    def x(self):
+        return np.array(self.x_counts)
 
     @property
-    def y(self) -> np.ndarray:
-        return np.asarray(self.y_counts, dtype=float)
+    def y(self):
+        return np.array(self.y_counts)
 
 
 @dataclass(frozen=True)
 class ScreeningResult:
-    """Stage 1b: route plus the evidence behind it."""
-    route: str                      # PASS / FLAGGED / REJECT
-    reasons: Tuple[str, ...]
-    p_incompatible_observed: float = float("nan")
-    p_incompatible_boundary: float = float("nan")
-    threshold: float = float("nan")
+    """Where the request goes (PASS, FLAGGED or REJECT) and why."""
+    route: str
+    reasons: tuple
+    p_incompatible_observed: float = NAN
+    p_incompatible_boundary: float = NAN
+    threshold: float = NAN
     outside_training_range: bool = False
-    detail: Dict[str, Any] = field(default_factory=dict, compare=False, hash=False)
+    detail: dict = field(default_factory=dict, compare=False)
 
 
 @dataclass(frozen=True)
 class NullDistribution:
-    """Stage 2a/2b: the sampling distribution of the scaled d_hat at the boundary pair."""
-    family: str                     # 'gamma' (network) / 'empirical' / 'weibull' (fallback)
-    method: str                     # e.g. 'nn_fp32', 'nn_fp16', 'mc_empirical'
-    params: Dict[str, float]
+    """How d_hat would vary by chance at the boundary pair.
+
+    family 'gamma' comes from the network (or a Gamma fitted to simulations), 'empirical'
+    is the simulated draws themselves, 'weibull' a Weibull fitted to them.
+    """
+    family: str
+    method: str
+    params: dict
     q95: float
     time_ms: float
-    draws: Optional[np.ndarray] = field(default=None, compare=False, hash=False, repr=False)
+    draws: Optional[np.ndarray] = field(default=None, compare=False, repr=False)
 
-    def sf(self, t: float) -> float:
-        """P(T >= t) under this distribution."""
-        from scipy import stats
+    def sf(self, t):
+        """Chance of a d_hat at least as large as t."""
         if self.family == "gamma":
-            return float(stats.gamma.sf(t, self.params["shape"], scale=1.0 / self.params["rate"]))
+            return float(stats.gamma.sf(t, self.params["shape"], scale=1 / self.params["rate"]))
         if self.family == "weibull":
             return float(stats.weibull_min.sf(t, self.params["k"], scale=self.params["lam"]))
         if self.family == "empirical":
-            d = self.draws
-            return float((np.sum(d >= t) + 1) / (d.size + 1))
+            return float((np.sum(self.draws >= t) + 1) / (self.draws.size + 1))
         raise ValueError(f"unknown family {self.family}")
 
 
 @dataclass(frozen=True)
 class TestResult:
-    """Stage 3: the minimal-effects test."""
+    """The minimal-effects test."""
     d_hat_norm: float
     epsilon: float
     p_value: float
-    decision: str                   # 'meaningful difference' / 'no meaningful difference shown'
+    decision: Optional[str]
     mode: str
 
 
 @dataclass(frozen=True)
 class Uncertainty:
-    """Stage 3+: how much the answer moves when rho is uncertain."""
+    """How far the p-value moves when rho is not taken as exact."""
     p_low: float
     p_high: float
-    shape_range: Tuple[float, float] = (float("nan"), float("nan"))
-    rate_range: Tuple[float, float] = (float("nan"), float("nan"))
+    shape_range: tuple = (NAN, NAN)
+    rate_range: tuple = (NAN, NAN)
     decision_stable: bool = True
     source: str = ""
     n_variants: int = 0
@@ -159,41 +160,48 @@ class Uncertainty:
 
 @dataclass
 class PipelineResult:
-    """What the user sees."""
+    """Everything the pipeline worked out for one request."""
     request: ComparisonRequest
     decision: Optional[str]
     p_value: Optional[float]
     reliability_flag: str
-    uncertainty_range: Optional[Tuple[float, float]]
-    flag_reasons: List[str]
+    uncertainty_range: Optional[tuple]
+    flag_reasons: list
     rho_check: RhoCheck
     screening: Optional[ScreeningResult] = None
     boundary: Optional[BoundaryPair] = None
     null: Optional[NullDistribution] = None
     test: Optional[TestResult] = None
     uncertainty: Optional[Uncertainty] = None
-    provenance: Dict[str, Any] = field(default_factory=dict)
+    provenance: dict = field(default_factory=dict)
 
-    def summary(self) -> Dict[str, Any]:
-        """One flat row, for tables and the demo."""
-        r = self.request
+    def summary(self):
+        """One flat row for tables."""
+        r, u = self.request, self.uncertainty
+
+        def rounded(pair, digits):
+            ok = pair is not None and np.isfinite(pair[0])
+            return tuple(round(v, digits) for v in pair) if ok else None
+
+        if self.screening:
+            route = self.screening.route
+        else:
+            route = REJECT if self.rho_check.status == "reject" else "-"
         return {
             "label": r.label or r.item,
             "item": r.item,
             "n_X": int(r.x.sum()),
             "n_Y": int(r.y.sum()),
-            "route": self.screening.route if self.screening else ("REJECT" if self.rho_check.status == "reject" else "-"),
+            "route": route,
             "null_method": self.null.method if self.null else None,
-            "d_hat_norm": None if self.test is None else round(self.test.d_hat_norm, 4),
+            "d_hat_norm": round(self.test.d_hat_norm, 4) if self.test else None,
             "epsilon": r.epsilon,
             "p_value": None if self.p_value is None else round(self.p_value, 4),
-            "p_range": None if self.uncertainty_range is None else tuple(round(v, 4) for v in self.uncertainty_range),
-            "shape_range": None if self.uncertainty is None or not np.isfinite(self.uncertainty.shape_range[0])
-            else tuple(round(v, 3) for v in self.uncertainty.shape_range),
-            "rate_range": None if self.uncertainty is None or not np.isfinite(self.uncertainty.rate_range[0])
-            else tuple(round(v, 3) for v in self.uncertainty.rate_range),
+            "p_range": rounded(self.uncertainty_range, 4),
+            "shape_range": rounded(u.shape_range, 3) if u else None,
+            "rate_range": rounded(u.rate_range, 3) if u else None,
             "decision": self.decision,
             "flag": self.reliability_flag,
             "flag_reasons": "; ".join(self.flag_reasons),
-            "time_ms": round(self.provenance.get("total_ms", float("nan")), 1),
+            "time_ms": round(self.provenance.get("total_ms", NAN), 1),
         }

@@ -1,20 +1,13 @@
-"""RYA's d_hat statistic and its simulator, in vectorised Python.
+"""RYA's distance d_hat and RYA's simulator, rewritten in Python (d_hat_simulation_from_LL.R).
 
-A line-by-line port of ``d_hat_simulation_from_LL.R`` (RYA, final_code):
+How the simulator works: each group has a fixed make-up of students by their "real"
+answer. On each run, every student answers through their row of rho, so some give a
+different answer than their real one. d_hat is then worked out exactly as RYA's
+d_hat_calc does (with the projection B, scaled by (1/n + 1/m) / 2). Repeating this
+thousands of times shows how much d_hat varies by chance.
 
-* a group has a fixed composition of latent types (how many students "really" belong to
-  answer 1..4);
-* on each trial, every student of type j answers according to row j of rho;
-* d_hat is RYA's ``d_hat_calc`` with the orthogonal projection B and ``scale_true = TRUE``,
-  i.e. multiplied by 0.5 * (1/n + 1/m).
-
-The network EXP002 was trained to predict the Gamma fitted to these draws, with its rate
-used as-is (Murat, 12 Oct: simulated mean / network mean = 1.003). So the draws here are on
-the same scale as the network's Gamma, and either can serve as the null distribution.
-
-This is also the "faithful latent-type simulator" Objective 2 needs: Shuyun's simulator uses
-observed answers as latent types, which is exactly what the network is given as X and Y, so
-conditional on the composition the two are the same model.
+The network EXP002 was trained to copy a Gamma fitted to exactly these draws, so the two
+are on the same scale (checked on the ry9 example: simulated mean 0.4756, network 0.4765).
 """
 from __future__ import annotations
 

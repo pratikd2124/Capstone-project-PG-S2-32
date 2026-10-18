@@ -1,13 +1,16 @@
-"""Stages 1a and 1b: rho validation and Gamma-compatibility screening (Objective 1, SIN-WEI).
+"""Steps 1a and 1b: check rho, then decide whether the network can be trusted (Objective 1).
 
-Wraps SIN-WEI's ``O1ScreeningGate`` (v2, 16 Oct) unchanged, with two integration tweaks:
+The checks themselves are SIN-WEI's (o1/o1_screening.py, unchanged). Three things are
+added here:
 
-* the detector runs from ``detector_params.json`` (the same StandardScaler + logistic
-  regression, exported from her joblib file) so it no longer depends on the scikit-learn
-  version that saved it (1.5.1) and can be ported to the browser;
-* both pairs are screened, as agreed: the degeneracy safeguard on the observed pair, and the
-  classifier on the observed pair AND on the boundary pair that actually reaches the network.
-  FLAGGED if either is flagged. A training-range check (group sizes 5-9,940) is added.
+* her detector runs from detector_params.json, the same numbers copied out of her joblib
+  file, so it doesn't depend on the scikit-learn version that saved it;
+* her classifier looks at the observed pair and at the boundary pair (the one the network
+  actually sees), and either one can flag the request;
+* two extra rules: group sizes outside the network's training range (5-9,940), and a small
+  group (under 30) compared with one at least 20 times bigger. The second was added after
+  testing showed the classifier passing a class of 25 against 9,000 when the network's
+  answer was about 40% off.
 """
 from __future__ import annotations
 
@@ -15,41 +18,25 @@ import json
 from pathlib import Path
 
 import numpy as np
-import pandas as pd
 
-from .contracts import FLAGGED, PASS, REJECT, BoundaryPair, ComparisonRequest, RhoCheck, ScreeningResult
+from .contracts import FLAGGED, PASS, REJECT, RhoCheck, ScreeningResult
 from .o1.o1_screening import O1ScreeningGate, calculate_P_structure_descriptors
 
 O1_DIR = Path(__file__).parent / "o1"
-TRAIN_N_MIN, TRAIN_N_MAX = 5, 9940          # docs/findings.md: training group sizes 5-9,819 / 5-9,940
-ROW_SUM_TOL = 0.020001                      # SIN-WEI's tolerance; warn above 1e-6, reject above this
-SMALL_GROUP_N, SMALL_GROUP_RATIO = 30, 20.0  # integration rule (see screen())
-OUT_OF_SCOPE_ITEMS = {f"chs{i}" for i in range(1, 7)}
-
-
-class _NumpyDetector:
-    """StandardScaler + LogisticRegression, from exported parameters."""
-
-    def __init__(self, params: dict):
-        self.mean = np.asarray(params["scaler_mean"])
-        self.scale = np.asarray(params["scaler_scale"])
-        self.coef = np.asarray(params["coef"])
-        self.intercept = float(params["intercept"])
-
-    def predict_proba(self, X: pd.DataFrame) -> np.ndarray:
-        z = (np.asarray(X, dtype=float) - self.mean) / self.scale
-        p1 = 1.0 / (1.0 + np.exp(-(z @ self.coef + self.intercept)))
-        return np.column_stack([1 - p1, p1])
+TRAINING_SIZES = (5, 9940)        # smallest and largest group the network was trained on
+ROW_SUM_LIMIT = 0.020001          # SIN-WEI's limit for how far a rho row may be from 1
+SMALL_GROUP_N = 30
+SMALL_GROUP_RATIO = 20.0
+SIX_OPTION_ITEMS = {f"chs{i}" for i in range(1, 7)}
 
 
 class Gate(O1ScreeningGate):
-    """SIN-WEI's gate, loading the detector from JSON instead of joblib."""
+    """SIN-WEI's gate, with the detector read from JSON instead of joblib."""
 
-    def __post_init__(self) -> None:
-        self.detector_model_path = Path(self.detector_model_path)
-        self.detector_metadata_path = Path(self.detector_metadata_path)
-        self.detector = _NumpyDetector(json.loads(self.detector_model_path.read_text()))
-        self.detector_metadata = json.loads(self.detector_metadata_path.read_text())
+    def __post_init__(self):
+        params = json.loads(Path(self.detector_model_path).read_text())
+        self.detector = _LogisticDetector(params)
+        self.detector_metadata = json.loads(Path(self.detector_metadata_path).read_text())
         self.feature_order = list(self.detector_metadata["feature_order"])
         self.threshold = float(self.detector_metadata["threshold"])
         self._p_scaler = self._p_nn = self._p_reference_df = self._training_nearest_distances = None
@@ -57,20 +44,34 @@ class Gate(O1ScreeningGate):
             self._prepare_training_space_reference(Path(self.screening_reference_csv))
 
 
-def load_gate(reference_csv: str | None = None, threshold: float | None = None) -> Gate:
-    g = Gate(detector_model_path=O1_DIR / "detector_params.json",
-             detector_metadata_path=O1_DIR / "O1_07_compatibility_detector_v1_metadata.json",
-             screening_reference_csv=reference_csv)
+class _LogisticDetector:
+    """Standard scaling followed by logistic regression: what her joblib file contains."""
+
+    def __init__(self, params):
+        self.mean = np.array(params["scaler_mean"])
+        self.scale = np.array(params["scaler_scale"])
+        self.coef = np.array(params["coef"])
+        self.intercept = params["intercept"]
+
+    def predict_proba(self, X):
+        z = (np.asarray(X, dtype=float) - self.mean) / self.scale
+        p = 1 / (1 + np.exp(-(z @ self.coef + self.intercept)))
+        return np.column_stack([1 - p, p])
+
+
+def load_gate(reference_csv=None, threshold=None):
+    gate = Gate(detector_model_path=O1_DIR / "detector_params.json",
+                detector_metadata_path=O1_DIR / "O1_07_compatibility_detector_v1_metadata.json",
+                screening_reference_csv=reference_csv)
     if threshold is not None:
-        g.threshold = float(threshold)
-    return g
+        gate.threshold = float(threshold)
+    return gate
 
 
-def validate_rho(req: ComparisonRequest) -> RhoCheck:
-    """Stage 1a. Reject what can't be scored; warn on rounding."""
-    reasons = []
+def validate_rho(req):
+    """Step 1a. Reject what can't be scored; warn about small rounding."""
     P = req.P
-    if req.item.lower() in OUT_OF_SCOPE_ITEMS:
+    if req.item.lower() in SIX_OPTION_ITEMS:
         return RhoCheck("reject", ("six-option chs item: no model exists for it",))
     if P.shape != (4, 4):
         return RhoCheck("reject", (f"rho must be 4x4, got {P.shape}",))
@@ -78,63 +79,62 @@ def validate_rho(req: ComparisonRequest) -> RhoCheck:
         return RhoCheck("reject", ("rho contains NaN or infinite values",))
     if (P < 0).any():
         return RhoCheck("reject", ("rho contains negative probabilities",))
-    err = float(np.max(np.abs(P.sum(axis=1) - 1)))
-    desc = calculate_P_structure_descriptors(P)
-    if err > ROW_SUM_TOL:
-        return RhoCheck("reject", (f"rho row sums off by up to {err:.3f} (limit 0.02)",), err,
-                        desc["certainty_P"], desc["rya_asymmetry_P"])
-    status = "pass"
-    if err > 1e-6:
-        status = "warn"
-        reasons.append(f"rho row sums rounded (max error {err:.3f}); kept as given")
+
+    error = float(np.max(np.abs(P.sum(axis=1) - 1)))
+    shape = calculate_P_structure_descriptors(P)
+    certainty, asymmetry = shape["certainty_P"], shape["rya_asymmetry_P"]
+    if error > ROW_SUM_LIMIT:
+        return RhoCheck("reject", (f"rho row sums off by up to {error:.3f} (limit 0.02)",),
+                        error, certainty, asymmetry)
+
+    warnings = []
+    if error > 1e-6:
+        warnings.append(f"rho row sums rounded (max error {error:.3f}); kept as given")
     if np.any(np.diag(P) < P.max(axis=1)):
-        status = "warn"
-        reasons.append("a latent type is not most likely to give its own answer")
+        warnings.append("a latent type is not most likely to give its own answer")
+    status = "warn" if warnings else "pass"
     if req.rho_source == "json" and req.item in ("sun1", "ry17"):
-        reasons.append("JSON and P.RData differ in row 2 col 1 for this item")
-    return RhoCheck(status, tuple(reasons), err, desc["certainty_P"], desc["rya_asymmetry_P"])
+        warnings.append("JSON and P.RData differ in row 2 col 1 for this item")
+    return RhoCheck(status, tuple(warnings), error, certainty, asymmetry)
 
 
-def screen(req: ComparisonRequest, rho_check: RhoCheck, bp: BoundaryPair | None, gate: Gate,
-           small_group_n: int | None = SMALL_GROUP_N, small_group_ratio: float = SMALL_GROUP_RATIO) -> ScreeningResult:
-    """Stage 1b. Route PASS / FLAGGED / REJECT, screening both pairs.
+def screen(req, rho_check, boundary, gate, small_group_n=SMALL_GROUP_N, small_group_ratio=SMALL_GROUP_RATIO):
+    """Step 1b. PASS to the network, FLAGGED to the fallback, or REJECT.
 
-    ``small_group_n``: integration rule added after validation (17 Oct). A group smaller than
-    this, compared with one at least ``small_group_ratio`` times larger, goes to the fallback
-    even if the classifier passes it: at n of about 25 vs 9,000 the classifier passes while
-    EXP002's q95 is about 40% too small. None switches the rule off (SIN-WEI's gate only).
+    Set small_group_n=None to turn the small-group rule off.
     """
     if rho_check.status == "reject":
-        return ScreenResultReject(rho_check.reasons)
-    obs = gate.screen_case(req.x, req.y, req.P, question=req.item)
-    if obs["route"] == "invalid_input":
-        return ScreenResultReject((obs["reason"],))
-    reasons = []
-    p_obs = obs["classifier"]["incompatibility_probability"]
-    if obs["reason"] == "original_pair_degenerate":
-        reasons.append("observed group answers all in one category")
-    if obs["classifier"]["flagged"]:
-        reasons.append(f"classifier flags observed pair (p={p_obs:.2f})")
+        return ScreeningResult(REJECT, rho_check.reasons)
 
-    p_bnd = float("nan")
-    if bp is not None and np.isfinite(bp.x).all() and bp.x.sum() > 0:
-        bnd = gate.screen_case(req.x, req.y, req.P, question=req.item, nn_x=bp.x, nn_y=bp.y)
-        if bnd["route"] != "invalid_input":
-            p_bnd = bnd["classifier"]["incompatibility_probability"]
-            if bnd["classifier"]["flagged"]:
-                reasons.append(f"classifier flags boundary pair (p={p_bnd:.2f})")
+    observed = gate.screen_case(req.x, req.y, req.P, question=req.item)
+    if observed["route"] == "invalid_input":
+        return ScreeningResult(REJECT, (observed["reason"],))
+
+    reasons = []
+    p_observed = observed["classifier"]["incompatibility_probability"]
+    if observed["reason"] == "original_pair_degenerate":
+        reasons.append("observed group answers all in one category")
+    if observed["classifier"]["flagged"]:
+        reasons.append(f"classifier flags observed pair (p={p_observed:.2f})")
+
+    p_boundary = float("nan")
+    if boundary is not None and np.isfinite(boundary.x).all() and boundary.x.sum() > 0:
+        result = gate.screen_case(req.x, req.y, req.P, question=req.item, nn_x=boundary.x, nn_y=boundary.y)
+        if result["route"] != "invalid_input":
+            p_boundary = result["classifier"]["incompatibility_probability"]
+            if result["classifier"]["flagged"]:
+                reasons.append(f"classifier flags boundary pair (p={p_boundary:.2f})")
 
     n, m = req.x.sum(), req.y.sum()
-    outside = not (TRAIN_N_MIN <= n <= TRAIN_N_MAX and TRAIN_N_MIN <= m <= TRAIN_N_MAX)
+    low, high = TRAINING_SIZES
+    outside = not (low <= n <= high and low <= m <= high)
     if outside:
-        reasons.append(f"group sizes {int(n)}/{int(m)} outside training range {TRAIN_N_MIN}-{TRAIN_N_MAX}")
+        reasons.append(f"group sizes {int(n)}/{int(m)} outside training range {low}-{high}")
+
     small, big = min(n, m), max(n, m)
     if small_group_n is not None and small < small_group_n and big / small >= small_group_ratio:
         reasons.append(f"small group ({int(small)}) against a group {big / small:.0f}x larger")
+
     route = FLAGGED if reasons else PASS
-    return ScreeningResult(route, tuple(reasons) or ("screening passed",), p_obs, p_bnd, gate.threshold,
-                           outside, {"o1_observed": obs})
-
-
-def ScreenResultReject(reasons) -> ScreeningResult:
-    return ScreeningResult(REJECT, tuple(reasons))
+    return ScreeningResult(route, tuple(reasons) or ("screening passed",), p_observed, p_boundary,
+                           gate.threshold, outside, {"o1_observed": observed})

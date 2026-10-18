@@ -1,65 +1,64 @@
-"""Stage 3+: rho uncertainty carried through to the p-value (Objective 3, Pratik).
+"""Step 3+: how much the answer depends on rho being exactly right (Objective 3, Pratik).
 
-rho is estimated from test-retest data but the method treats it as fixed. Here the whole
-test (boundary pair, observed d_hat, null distribution, p-value) is re-run for a set of
-plausible rho matrices, and the spread of p-values is reported.
+rho is estimated from a test-retest study, but the method treats it as exact. Here the
+whole test is re-run with a few other plausible rho matrices, and the spread of p-values
+is reported. Where the other matrices come from:
 
-Where the rho variants come from:
-* ``transition_counts`` given: draws from a Dirichlet posterior on each row of rho
-  (Pratik's future-extension design: rho_j | data ~ Dirichlet(prior + counts_j));
-* otherwise: Pratik's off-diagonal error-mass perturbation, +/- ``delta`` (default 5%).
+* if the request carries real test-retest counts: random draws from a Dirichlet posterior
+  on each row of rho;
+* otherwise: rho with its off-diagonal "error" mass scaled up and down by 2.5% and 5%.
+
+Both use Pratik's own functions from o3/, unchanged.
 """
 from __future__ import annotations
 
-from typing import Callable, List
+from dataclasses import replace
 
 import numpy as np
 
-from .contracts import ComparisonRequest, Uncertainty
-from dataclasses import replace
+from .contracts import Uncertainty
+from .o3.loader import pratik_modules
 
 
-def perturb_rho_offdiagonal_mass(rho: np.ndarray, relative_change: float) -> np.ndarray:
-    """Pratik's perturbation, called from his own code (o3/common.py, unchanged)."""
-    from .o3.loader import pratik_modules
+def perturb_rho_offdiagonal_mass(rho, relative_change):
+    """Pratik's perturbation (o3/common.py)."""
     return pratik_modules()[1].perturb_rho_offdiagonal_mass(rho, relative_change)
 
 
-def rho_posterior_draws(counts: np.ndarray, draws: int, prior: float = 0.5, seed: int = 7) -> np.ndarray:
-    """Dirichlet posterior draws of rho from test-retest counts, shape (draws, 4, 4).
-
-    Pratik's ``_sample_rho`` (o3/06_bayesian_evaluation.py, unchanged).
-    """
-    from .o3.loader import pratik_modules
+def rho_posterior_draws(counts, draws, prior=0.5, seed=7):
+    """Pratik's rho posterior (o3/06_bayesian_evaluation.py), shape (draws, 4, 4)."""
     return pratik_modules()[2]._sample_rho(np.asarray(counts, dtype=float), draws, prior, seed)
 
 
-def rho_variants(req: ComparisonRequest, delta: float = 0.05, n_posterior: int = 20) -> tuple[List[np.ndarray], str]:
+def rho_variants(req, delta=0.05, n_posterior=20):
+    """The alternative rho matrices to try, and a note of where they came from."""
     if req.rho_transition_counts is not None:
-        return list(rho_posterior_draws(np.asarray(req.rho_transition_counts), n_posterior)), \
-            f"Dirichlet posterior from test-retest counts ({n_posterior} draws)"
-    out = []
-    for c in (-delta, -delta / 2, delta / 2, delta):
+        draws = rho_posterior_draws(req.rho_transition_counts, n_posterior)
+        return list(draws), f"Dirichlet posterior from test-retest counts ({n_posterior} draws)"
+    variants = []
+    for change in (-delta, -delta / 2, delta / 2, delta):
         try:
-            out.append(perturb_rho_offdiagonal_mass(req.P, c))
-        except ValueError:
+            variants.append(perturb_rho_offdiagonal_mass(req.P, change))
+        except ValueError:          # the change would push a diagonal entry below zero
             pass
-    return out, f"rho error mass +/-{delta:.0%}"
+    return variants, f"rho error mass +/-{delta:.0%}"
 
 
-def propagate(req: ComparisonRequest, base_p: float, run_one: Callable[[ComparisonRequest], tuple],
-              delta: float = 0.05, n_posterior: int = 20) -> Uncertainty:
-    """Re-run the test for each rho variant. ``run_one(req) -> (p_value, shape, rate)``."""
+def propagate(req, base_p, run_one, delta=0.05, n_posterior=20):
+    """Re-run the test for every rho variant. run_one(request) returns (p, shape, rate)."""
     variants, source = rho_variants(req, delta, n_posterior)
-    ps, shapes, rates = [base_p], [], []
+    p_values, shapes, rates = [base_p], [], []
     for P in variants:
-        p, sh, rt = run_one(replace(req, rho=tuple(map(tuple, P))))
+        p, shape, rate = run_one(replace(req, rho=tuple(map(tuple, P))))
         if np.isfinite(p):
-            ps.append(p)
-        if sh is not None and np.isfinite(sh):
-            shapes.append(sh)
-            rates.append(rt)
-    lo, hi = float(np.min(ps)), float(np.max(ps))
-    stable = (hi < req.alpha) or (lo >= req.alpha)
-    rng = lambda v: (float(np.min(v)), float(np.max(v))) if v else (float("nan"), float("nan"))
-    return Uncertainty(lo, hi, rng(shapes), rng(rates), bool(stable), source, len(variants))
+            p_values.append(p)
+        if shape is not None and np.isfinite(shape):
+            shapes.append(shape)
+            rates.append(rate)
+
+    def spread(values):
+        return (float(min(values)), float(max(values))) if values else (float("nan"), float("nan"))
+
+    low, high = spread(p_values)
+    stable = high < req.alpha or low >= req.alpha
+    return Uncertainty(low, high, spread(shapes), spread(rates), stable, source, len(variants))

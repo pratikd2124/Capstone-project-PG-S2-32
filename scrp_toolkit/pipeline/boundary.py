@@ -1,81 +1,79 @@
-"""Where the null distribution is evaluated, and the minimal-effects test itself.
+"""The boundary pair and the minimal-effects test (RYA's method).
 
-PROVISIONAL until RYA sends the portal JavaScript. Two modes, selectable in config:
+The test asks: is the gap between the two groups bigger than epsilon? So the question
+becomes how surprising the observed gap would be if the true gap were exactly epsilon.
+To get there, both groups' answer shares are slid toward their midpoint (group sizes stay
+the same) until their distance is exactly epsilon. That is the boundary pair.
 
-``boundary``    (default) the draft paper's construction. H0: d_norm < epsilon. Shrink both
-                groups' proportions toward their midpoint, keeping n and m, until
-                d_norm = epsilon. The null distribution of d_hat is taken at that pair, and
-                p = P(d_hat >= observed d_hat | boundary pair).
-``point_null``  Murat's 12 Oct stand-in (epsilon = 0): both groups get the pooled midpoint
-                shares; p = P(d_hat >= observed | no difference).
+This follows the draft paper and is provisional until RYA sends the portal code.
+mode="point_null" is the simpler stand-in Murat used: epsilon = 0, both groups at the
+midpoint.
 """
 from __future__ import annotations
 
 import numpy as np
 from scipy.optimize import brentq
 
-from .contracts import BoundaryPair, ComparisonRequest, NullDistribution, TestResult
+from .contracts import BoundaryPair, TestResult
 from .simulate import d_norm
 
 MODES = ("boundary", "point_null")
+MEANINGFUL = "meaningful difference"
+NOT_SHOWN = "no meaningful difference shown"
 
 
 def _shrunk(p, q, s):
-    mid = 0.5 * (p + q)
+    """Move shares p and q toward their midpoint. s=1 leaves them, s=0 merges them."""
+    mid = (p + q) / 2
     return mid + s * (p - mid), mid + s * (q - mid)
 
 
-def find_boundary(req: ComparisonRequest, mode: str = "boundary") -> BoundaryPair:
-    """The (x~, y~) pair the null distribution is evaluated at. n and m never change."""
+def _largest_stretch(p, q):
+    """How far apart p and q can be pushed before a share goes negative (at least 1)."""
+    mid = (p + q) / 2
+    limits = [-mid[i] / (v[i] - mid[i]) for v in (p, q) for i in range(4) if v[i] < mid[i]]
+    return max(1.0, min(limits)) if limits else 1.0
+
+
+def find_boundary(req, mode="boundary"):
     if mode not in MODES:
         raise ValueError(f"mode must be one of {MODES}")
-    x, y, P = req.x, req.y, req.P
-    n, m = x.sum(), y.sum()
-    p, q = x / n, y / m
-    d_obs = d_norm(p, q, n, m, P)
+    n, m = req.x.sum(), req.y.sum()
+    p, q, P = req.x / n, req.y / m, req.P
+    d_observed = d_norm(p, q, n, m, P)
+
+    def pair(s, note):
+        a, b = _shrunk(p, q, s)
+        return BoundaryPair(tuple(a * n), tuple(b * m), float(s), d_observed, d_norm(a, b, n, m, P), mode, note)
 
     if mode == "point_null":
-        mid = 0.5 * (p + q)
-        return BoundaryPair(tuple(mid * n), tuple(mid * m), 0.0, d_obs, 0.0, mode,
+        mid = (p + q) / 2
+        return BoundaryPair(tuple(mid * n), tuple(mid * m), 0.0, d_observed, 0.0, mode,
                             "epsilon treated as 0; both groups at pooled shares")
+    if not np.isfinite(d_observed):
+        return BoundaryPair(tuple(req.x), tuple(req.y), 1.0, d_observed, float("nan"), mode,
+                            "observed d is not finite")
 
-    eps = req.epsilon
-
-    def f(s):
+    def gap_minus_epsilon(s):
         a, b = _shrunk(p, q, s)
-        return d_norm(a, b, n, m, P) - eps
+        return d_norm(a, b, n, m, P) - req.epsilon
 
-    # Largest s that keeps both groups' shares non-negative (lets us expand when d_obs < eps).
-    mid = 0.5 * (p + q)
-    with np.errstate(divide="ignore", invalid="ignore"):
-        lim = [(-mid[i]) / (v[i] - mid[i]) for v in (p, q) for i in range(4) if v[i] - mid[i] < 0]
-    s_max = float(min(lim)) if lim else 1.0
-    s_max = max(1.0, s_max)
-
-    if not np.isfinite(d_obs):
-        return BoundaryPair(tuple(x), tuple(y), 1.0, d_obs, float("nan"), mode, "observed d is not finite")
-    if d_obs >= eps:
-        s = brentq(f, 0.0, 1.0, xtol=1e-10)
-        note = "shrunk toward midpoint"
-    elif f(s_max) >= 0:
-        s = brentq(f, 1.0, s_max, xtol=1e-10)
-        note = "observed d below epsilon; expanded to reach the boundary"
-    else:
-        a, b = _shrunk(p, q, s_max)
-        return BoundaryPair(tuple(a * n), tuple(b * m), s_max, d_obs, d_norm(a, b, n, m, P), mode,
-                            "epsilon not reachable inside the simplex")
-    a, b = _shrunk(p, q, s)
-    return BoundaryPair(tuple(a * n), tuple(b * m), float(s), d_obs, d_norm(a, b, n, m, P), mode, note)
+    stretch = _largest_stretch(p, q)
+    if d_observed >= req.epsilon:
+        return pair(brentq(gap_minus_epsilon, 0.0, 1.0, xtol=1e-10), "shrunk toward midpoint")
+    if gap_minus_epsilon(stretch) >= 0:
+        return pair(brentq(gap_minus_epsilon, 1.0, stretch, xtol=1e-10),
+                    "observed d below epsilon; expanded to reach the boundary")
+    return pair(stretch, "epsilon not reachable inside the simplex")
 
 
-def minimal_effects_test(req: ComparisonRequest, bp: BoundaryPair, null: NullDistribution) -> TestResult:
-    """p = P(d_hat >= observed d_hat) under the null at the boundary pair."""
-    p_value = null.sf(bp.d_norm_observed) if np.isfinite(bp.d_norm_observed) else float("nan")
-    eps = 0.0 if bp.mode == "point_null" else req.epsilon
+def minimal_effects_test(req, boundary, null):
+    """p = chance of a d_hat at least as big as the observed one, at the boundary pair."""
+    d = boundary.d_norm_observed
+    p_value = null.sf(d) if np.isfinite(d) else float("nan")
     if not np.isfinite(p_value):
         decision = None
-    elif p_value < req.alpha:
-        decision = "meaningful difference"
     else:
-        decision = "no meaningful difference shown"
-    return TestResult(bp.d_norm_observed, eps, float(p_value), decision, bp.mode)
+        decision = MEANINGFUL if p_value < req.alpha else NOT_SHOWN
+    epsilon = 0.0 if boundary.mode == "point_null" else req.epsilon
+    return TestResult(d, epsilon, float(p_value), decision, boundary.mode)
