@@ -1,0 +1,3 @@
+method,reference_q95,reference_tail_at_q95,n_reference,status,q95_estimate,tail_estimate,shape,rate,n_draws,q95_relative_error,tail_absolute_error,instance_id,source_status,evaluation_seconds,n_gamma_draws,n_mc_draws
+gamma,0.5977017432831472,0.05,10000,ok,0.5344194198737923,0.03354450488430043,1.3454614249033765,6.803302756254981,2000,0.10587608973958838,0.016455495115699575,case4_original_model_draws,external_model_draws_unverified_by_script,0.004372,2000,2000
+monte_carlo_empirical,0.5977017432831472,0.05,10000,ok,0.5675309823124487,0.0445,,,2000,0.05047795377837102,0.005500000000000005,case4_original_model_draws,external_model_draws_unverified_by_script,0.004372,2000,2000
