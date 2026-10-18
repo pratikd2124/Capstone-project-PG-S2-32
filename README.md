@@ -15,7 +15,7 @@ Recreates RYA's Gemfinder baseline from the customer's Box files, using the ship
 **Setup**
 - `setup_env.bat` / `setup_env.sh`: one-command install and self-check
 - `environment.yml`: the `scrp` conda environment (Python 3.11)
-- `requirements.txt`: packages (tested ranges; `scipy` added for the pipeline); `requirements-lock.txt`: exact versions as a fallback
+- `requirements.txt`: packages (tested ranges; `scipy` and `scikit-learn` added for the pipeline); `requirements-lock.txt`: exact versions as a fallback
 - `pyproject.toml`: package metadata
 
 **Settings**

@@ -6,6 +6,7 @@ pandas==3.0.6
 torch==2.14.0
 onnxruntime==1.30.0
 scipy==1.18.1          # added 17 Oct for the pipeline (tested on Linux; confirm on Windows)
+scikit-learn==1.9.1    # added 18 Oct for the pipeline (tested on Linux; confirm on Windows)
 matplotlib==3.11.2
 seaborn==0.13.2
 pytest==8.4.2
