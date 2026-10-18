@@ -22,7 +22,7 @@ echo "[3/4] Registering the notebook kernel 'Python (scrp)'..."
 python -m ipykernel install --user --name scrp --display-name "Python (scrp)"
 
 echo "[4/4] Checking everything works..."
-python -c "import sys, numpy, pandas, torch, onnxruntime; print('   Python', sys.version.split()[0], '| numpy', numpy.__version__, '| pandas', pandas.__version__, '| torch', torch.__version__, '| onnxruntime', onnxruntime.__version__)"
+python -c "import sys, numpy, pandas, scipy, torch, onnxruntime; print('   Python', sys.version.split()[0], '| numpy', numpy.__version__, '| pandas', pandas.__version__, '| torch', torch.__version__, '| onnxruntime', onnxruntime.__version__)"
 python -m pytest -q -p no:cacheprovider tests
 python -m scrp_toolkit.cli baseline --skip-dataset
 

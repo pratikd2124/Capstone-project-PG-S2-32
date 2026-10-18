@@ -8,13 +8,14 @@ Recreates RYA's Gemfinder baseline from the customer's Box files, using the ship
 2. Set up (Anaconda Prompt, once): `setup_env.bat` (Mac/Linux: `bash setup_env.sh`)
 3. Check: `conda activate scrp` → `python -m scrp_toolkit.cli baseline` → expect `359/359 ... BASELINE MATCHES`
 4. Learn: open `walkthrough.ipynb`, kernel **Python (scrp)**, Restart → Run All (about 5–7 min)
+5. Pipeline (branch `integration`): open `pipeline_walkthrough.ipynb`, same kernel, Run All (about 1 min); or `python -m scrp_toolkit.cli pipeline-demo`
 
 ## Files
 
 **Setup**
 - `setup_env.bat` / `setup_env.sh`: one-command install and self-check
 - `environment.yml`: the `scrp` conda environment (Python 3.11)
-- `requirements.txt`: packages (tested ranges); `requirements-lock.txt`: exact versions as a fallback
+- `requirements.txt`: packages (tested ranges; `scipy` added for the pipeline); `requirements-lock.txt`: exact versions as a fallback
 - `pyproject.toml`: package metadata
 
 **Settings**
@@ -37,13 +38,16 @@ Recreates RYA's Gemfinder baseline from the customer's Box files, using the ship
 - `rds.py`: reads RYA's `P.RData`
 - `cli.py`: command line, `python -m scrp_toolkit.cli <command>`
 - `known_answers/`: recorded baseline (`rya_baseline.json`), Murat's reference, ry9 example
+- `pipeline/`: the integrated pipeline (Objectives 1–4): screening, network or fallback null, minimal-effects test, ρ uncertainty; team code unchanged in `o1/`, `o2/`, `o3/`. See `docs/pipeline.md`
 
 **Notebook and docs**
 - `walkthrough.ipynb`: Steps 1–9, each one compared side by side with Box
+- `pipeline_walkthrough.ipynb`: the pipeline stage by stage on the demo cases, with outputs
+- `docs/pipeline.md`: pipeline design, decisions, results and open points
 - `docs/findings.md`: recorded values, data issues, open questions for RYA
 
 **Tests**
-- `tests/`: 47 tests on synthetic data (`pytest -q`); `.github/workflows/tests.yml` runs them in CI
+- `tests/`: 66 tests on synthetic data (`pytest -q`); `.github/workflows/tests.yml` runs them in CI
 
 **Data: `data/`** (customer's Box files, read-only)
 - `Final Network w Code (15-07-2022)/final_network_July15_22/`: model (`final_network_model/`), training data (`instance_data/`), RYA's code (`final_code/`)
