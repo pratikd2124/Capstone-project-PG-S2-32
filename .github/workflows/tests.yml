@@ -16,6 +16,6 @@ jobs:
         run: pip install -r requirements.txt
       - name: Run unit tests
         run: pytest -q
-        # These tests run entirely on synthetic data (see tests/), so no project zip / secrets
-        # are needed here. They do NOT check predictions against the real ONNX model -- that's
-        # what `scrp_toolkit.cli validate` (run locally, against the real data) is for.
+        # The tests pull RYA's baseline code and model files from the Baseline-Recreation branch
+        # (integrated_pipeline/baseline.py). Most run on a small synthetic project; one checks the
+        # real EXP002 against RYA's simulator.

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# SCRP toolkit: one-command setup for Mac / Linux.
+# Gemfinder prototype pipeline: one-command setup for Mac / Linux.
 #   bash setup_env.sh        (run in the repo folder, the one with README.md)
 # Creates or updates the "scrp" conda environment, registers the notebook kernel,
 # then checks everything works.
@@ -22,10 +22,10 @@ echo "[3/4] Registering the notebook kernel 'Python (scrp)'..."
 python -m ipykernel install --user --name scrp --display-name "Python (scrp)"
 
 echo "[4/4] Checking everything works..."
-python -c "import sys, numpy, pandas, scipy, sklearn, torch, onnxruntime; print('   Python', sys.version.split()[0], '| numpy', numpy.__version__, '| pandas', pandas.__version__, '| torch', torch.__version__, '| onnxruntime', onnxruntime.__version__)"
+python -c "import sys, numpy, pandas, scipy, sklearn, torch, onnx, onnxruntime; print('   Python', sys.version.split()[0], '| numpy', numpy.__version__, '| pandas', pandas.__version__, '| torch', torch.__version__, '| onnxruntime', onnxruntime.__version__)"
 python -m pytest -q -p no:cacheprovider tests
-python -m scrp_toolkit.cli baseline --skip-dataset
+python -c "from integrated_pipeline.baseline import data_root; print('   Baseline ready in', data_root())"
 
 echo
 echo "All set. From now on: conda activate scrp"
-echo "Full check (about 2 min): python -m scrp_toolkit.cli baseline"
+echo "Demo: open pipeline_showcase.ipynb with the kernel 'Python (scrp)'"

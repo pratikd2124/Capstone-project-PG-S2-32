@@ -1,4 +1,4 @@
-"""The integrated pipeline (scrp_toolkit/pipeline): stage contracts, routing and the maths.
+"""The integrated pipeline (integrated_pipeline/): stage contracts, routing and the maths.
 
 Mechanics run on the synthetic project, like the other tests. Checks that need RYA's real
 model (the simulator matches EXP002; SIN-WEI's acceptance numbers) are skipped when the real
@@ -12,16 +12,25 @@ import numpy as np
 import pytest
 
 from scrp_toolkit.config import resolve_project_paths
-from scrp_toolkit.pipeline.boundary import find_boundary, minimal_effects_test
-from scrp_toolkit.pipeline.contracts import AMBER, FLAGGED, GREEN, PASS, RED, REJECT, ComparisonRequest as R
-from scrp_toolkit.pipeline.screen import load_gate, validate_rho
-from scrp_toolkit.pipeline.simulate import B, d_hat_scaled, d_norm, integer_composition, simulate_d_hat
-from scrp_toolkit.pipeline.uncertainty import perturb_rho_offdiagonal_mass, rho_posterior_draws
+from integrated_pipeline.boundary import find_boundary, minimal_effects_test
+from integrated_pipeline.contracts import AMBER, FLAGGED, GREEN, PASS, RED, REJECT, ComparisonRequest as R
+from integrated_pipeline.screen import load_gate, validate_rho
+from integrated_pipeline.simulate import B, d_hat_scaled, d_norm, integer_composition, simulate_d_hat
+from integrated_pipeline.uncertainty import perturb_rho_offdiagonal_mass, rho_posterior_draws
 
 from . import synthetic_project
 
 warnings.filterwarnings("ignore")
-REAL = Path(__file__).resolve().parent.parent / "data"
+def _real_data():
+    """RYA's real data (downloaded from GitHub by integrated_pipeline.baseline), or None offline."""
+    try:
+        from integrated_pipeline.baseline import data_root
+        return Path(data_root())
+    except Exception:
+        return None
+
+
+REAL = _real_data()
 P_EX = np.array([[0.8, 0.15, 0.04, 0.01], [0.1, 0.7, 0.15, 0.05], [0.03, 0.12, 0.7, 0.15], [0.01, 0.04, 0.15, 0.8]])
 
 
@@ -83,8 +92,8 @@ def test_rho_validation():
 
 def test_numpy_detector_matches_sin_wei_joblib():
     sk = pytest.importorskip("sklearn")
-    from scrp_toolkit.pipeline.o1.o1_screening import O1ScreeningGate
-    d = Path(__file__).resolve().parent.parent / "scrp_toolkit/pipeline/o1"
+    from o1_screening.o1_screening import O1ScreeningGate
+    d = Path(__file__).resolve().parent.parent / "o1_screening"
     orig = O1ScreeningGate(d / "O1_07_compatibility_detector_v1.joblib", d / "O1_07_compatibility_detector_v1_metadata.json")
     ours = load_gate()
     rng = np.random.default_rng(0)
@@ -107,8 +116,8 @@ def test_sin_wei_interface_acceptance_cases():
 @pytest.fixture(scope="module")
 def pipes(tmp_path_factory):
     pytest.importorskip("onnx")
-    from scrp_toolkit.inference import UnreliabilityPredictor
-    from scrp_toolkit.pipeline.run import Pipeline, PipelineConfig
+    from o4_efficiency.batched import EfficientPredictor as UnreliabilityPredictor
+    from integrated_pipeline.run import Pipeline, PipelineConfig
     pred = UnreliabilityPredictor(resolve_project_paths(synthetic_project.build(tmp_path_factory.mktemp("p"))))
     robust = Pipeline(pred, PipelineConfig(fallback_draws=800, uncertainty_draws=300))
     direct = Pipeline(pred, PipelineConfig(mode="direct"), gate=robust.gate)
@@ -156,9 +165,9 @@ def test_summary_row_has_the_user_facing_fields(pipes):
 
 
 # ---- real model (skipped without RYA's data) --------------------------------------------
-@pytest.mark.skipif(not (REAL / "Unreliability Matrices").exists(), reason="RYA data not present")
+@pytest.mark.skipif(REAL is None, reason="RYA data could not be downloaded")
 def test_simulator_matches_EXP002_on_ry9():
-    from scrp_toolkit.inference import UnreliabilityPredictor
+    from o4_efficiency.batched import EfficientPredictor as UnreliabilityPredictor
     pred = UnreliabilityPredictor(resolve_project_paths(REAL))
     x, y = np.array([40, 52, 7, 14]), np.array([9, 17, 54, 12])
     shape, rate = pred.predict(x, y, "ry9")
@@ -167,10 +176,10 @@ def test_simulator_matches_EXP002_on_ry9():
     assert sim.mean() == pytest.approx(shape / rate, rel=0.02)   # rate used as-is
 
 
-# ---- Objective 3 Bayesian analogue (o3/, evaluation only) -------------------------------
+# ---- Objective 3 Bayesian analogue (o3_uncertainty/, evaluation only) -------------------
 def test_pratik_modules_load_without_leaking_names():
     import sys
-    from scrp_toolkit.pipeline.o3.loader import pratik_modules
+    from o3_uncertainty.loader import pratik_modules
     cfg, common, b06 = pratik_modules()
     assert cfg.DIRICHLET_PRIOR_ALPHA == 0.5
     assert "config" not in sys.modules or sys.modules["config"] is not cfg
@@ -178,7 +187,7 @@ def test_pratik_modules_load_without_leaking_names():
 
 
 def test_pratik_functions_agree_with_pipeline_maths():
-    from scrp_toolkit.pipeline.o3.loader import pratik_modules
+    from o3_uncertainty.loader import pratik_modules
     _, common, b06 = pratik_modules()
     x, y = np.array([40., 52, 7, 14]), np.array([9., 17, 54, 12])
     assert common.d_hat_norm(x, y, P_EX, B) == pytest.approx(d_norm(x / x.sum(), y / y.sum(), x.sum(), y.sum(), P_EX), rel=1e-12)
@@ -189,7 +198,7 @@ def test_pratik_functions_agree_with_pipeline_maths():
 
 
 def test_bayesian_result_fields():
-    from scrp_toolkit.pipeline.bayes_eval import bayesian_result
+    from integrated_pipeline.bayes_eval import bayesian_result
     r = bayesian_result(R.make("q", [40, 52, 7, 14], [9, 17, 54, 12], P_EX, epsilon=0.1), draws=2000)
     assert 0 <= r["bayes_P_d_gt_eps"] <= 1 and r["bayes_ci95"][0] <= r["bayes_d_median"] <= r["bayes_ci95"][1]
     r2 = bayesian_result(R.make("q", [40, 52, 7, 14], [9, 17, 54, 12], P_EX, epsilon=0.1,
@@ -199,7 +208,7 @@ def test_bayesian_result_fields():
 
 def test_small_group_rule(pipes):
     pred, robust, _ = pipes
-    from scrp_toolkit.pipeline.screen import screen
+    from integrated_pipeline.screen import screen
     req = R.make("ry9", [5, 6, 8, 6], [2000, 3000, 2500, 1500], pred.p_matrices["ry9"])
     rc, bp = validate_rho(req), find_boundary(req)
     on = screen(req, rc, bp, robust.gate, small_group_n=30)

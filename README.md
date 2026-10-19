@@ -1,73 +1,77 @@
-# SCRP toolkit (PG-S2-32)
+# Gemfinder prototype pipeline (PG-S2-32)
 
-Recreates RYA's Gemfinder baseline from the customer's Box files, using the shipped EXP002 model. Nothing is retrained.
+RYA's Gemfinder statistical core, unchanged, with four additions around it: input screening (O1), a simulation fallback (O2), uncertainty reporting (O3) and a faster, smaller network (O4). This is a prototype that runs on synthetic test cases. It doesn't use any real student data.
 
-## Quick start
+This branch contains only the new work. RYA's baseline (the `scrp_toolkit` package, the EXP002 model and the ρ matrices) lives on the **Baseline-Recreation** branch. The first time you run anything here, the files it needs are downloaded from that branch into a local `.baseline/` folder, which git ignores. After that it runs offline.
 
-1. Clone: `git clone -b main scrp-toolkit.bundle scrp-toolkit`
-2. Set up (Anaconda Prompt, once): `setup_env.bat` (Mac/Linux: `bash setup_env.sh`)
-3. Check: `conda activate scrp` → `python -m scrp_toolkit.cli baseline` → expect `359/359 ... BASELINE MATCHES`
-4. Learn: open `walkthrough.ipynb`, kernel **Python (scrp)**, Restart → Run All (about 5–7 min)
-5. Pipeline (branch `integration`): open `pipeline_walkthrough.ipynb`, same kernel, Run All (about 1 min); or `python -m scrp_toolkit.cli pipeline-demo`
+## Quick start (Anaconda Prompt)
 
-## Files
+1. Set up once: `setup_env.bat` (Mac/Linux: `bash setup_env.sh`). This creates the `scrp` environment, registers the **Python (scrp)** kernel, downloads the baseline and runs the tests.
+2. `conda activate scrp`
+3. `jupyter notebook pipeline_showcase.ipynb`, then Kernel → Restart & Run All. It takes about 20 seconds.
 
-**Setup**
-- `setup_env.bat` / `setup_env.sh`: one-command install and self-check
-- `environment.yml`: the `scrp` conda environment (Python 3.11)
-- `requirements.txt`: packages (tested ranges; `scipy` and `scikit-learn` added for the pipeline); `requirements-lock.txt`: exact versions as a fallback
-- `pyproject.toml`: package metadata
+## What the pipeline adds
 
-**Settings**
-- `scrp_toolkit/settings.py`: every path and choice, in one place (shared, don't edit)
-- `local_settings.example.py`: copy to `local_settings.py` for your own paths (ignored by git)
+- **Stops invalid inputs:** a broken ρ or a six-option item is rejected (RED) instead of getting a p-value.
+- **Handles a small class against a national cohort** without retraining the network.
+- **Answers those edge cases reliably:** flagged cases use RYA's own simulation instead of the network.
+- **Shows how much a result depends on question reliability:** a p-value range over ρ (AMBER if the decision could flip).
+- **Runs on an optimised network:** batched, with optional fp16 weights, giving the same decisions.
 
-**Package: `scrp_toolkit/`** (each file starts with a plain-English summary)
-- `config.py`: finds the data files
-- `reliability.py`: unreliability matrices, asymmetry
-- `features.py`: answer counts → the 40 model inputs
-- `inference.py`: runs EXP002 → shape, rate (`predict_batch` for many items: same answers, ~60x faster; `weights="fp16"`: half-size model, opt-in)
-- `scoring.py`: scores every item for one RY25 school (`load_survey` reads the CSVs once)
-- `dataset.py`: rebuilds RYA's training data
-- `model.py`: network and loss
-- `train.py`, `compare.py`: train a fresh network and compare it with EXP002 (experiments only)
-- `validate.py`: quick known-answer check
-- `baseline.py`: the full 359-check comparison with RYA
-- `edge_cases.py`: unusual inputs for the safety detector
-- `profiling.py`: where EXP002's time and memory go, projected to 200k predictions
-- `rds.py`: reads RYA's `P.RData`
-- `cli.py`: command line, `python -m scrp_toolkit.cli <command>`
-- `known_answers/`: recorded baseline (`rya_baseline.json`), Murat's reference, ry9 example
-- `pipeline/`: the integrated pipeline (Objectives 1–4): screening, network or fallback null, minimal-effects test, ρ uncertainty; team code unchanged in `o1/`, `o2/`, `o3/`. See `docs/pipeline.md`
+## Folders
 
-**Notebook and docs**
-- `walkthrough.ipynb`: Steps 1–9, each one compared side by side with Box
-- `pipeline_walkthrough.ipynb`: the pipeline stage by stage on the demo cases, with outputs
-- `docs/pipeline.md`: pipeline design, decisions, results and open points
-- `docs/findings.md`: recorded values, data issues, open questions for RYA
+**Top level**
+- `pipeline_showcase.ipynb`: the short presentation demo (all ten cases, then one spotlight per objective)
+- `showcase.py`: helper functions for the showcase notebook
+- `README.md`, `requirements.txt`, `environment.yml`, `setup_env.bat` / `setup_env.sh`, `pyproject.toml`, `.gitignore`, `.gitattributes`
+- `.github/workflows/tests.yml`: runs the tests on GitHub on every push
 
-**Tests**
-- `tests/`: 66 tests on synthetic data (`pytest -q`); `.github/workflows/tests.yml` runs them in CI
+**`o1_screening/`: Validation screening (SIN-WEI)**
+- `o1_screening.py`: ρ checks and the Gamma-compatibility detector (unchanged from her handover)
+- `O1_07_compatibility_detector_v1.joblib` + `_metadata.json`: her trained detector
+- `detector_params.json`: the same detector exported to JSON, so it doesn't depend on the scikit-learn version
+- `O1_demo_cases.json`: her acceptance cases
 
-**Data: `data/`** (customer's Box files, read-only)
-- `Final Network w Code (15-07-2022)/final_network_July15_22/`: model (`final_network_model/`), training data (`instance_data/`), RYA's code (`final_code/`)
-- `Unreliability Matrices/unreliability-matrices.json`
-- `Data/RY25_PreMay10.csv`, `Data/RY25_PostMay10.csv`: real student survey data
+**`o2_fallback/`: Fallback inference (Shuyun)**
+- `backup_methods.py`: estimates the null from simulation draws (empirical tail, Gamma fit), unchanged
 
-## Commands
+**`o3_uncertainty/`: Uncertainty and Bayesian analysis (Pratik)**
+- `common.py`, `config.py`, `06_bayesian_evaluation.py`: his pipeline_v2 files, unchanged
+- `loader.py`: imports his files without editing them
 
-- `baseline`: full check against RYA → `baseline_report.csv`
-- `explore --top-n 10`: most asymmetric items
-- `score`: ry9 example and the case-study school
-- `validate --known-answers scrp_toolkit/known_answers/ry9_example.json`
-- `gen-edge-cases --check-response-cases`: writes `edge_cases/`
-- `profile`: time and memory per stage and per layer → `profile_report.json`
-- `export-model`: EXP002 with fp16 weights and a batch input, for the browser → `exp002_fp16.onnx`
-- `train --quick-demo`, `compare --quick-demo`: experiments only, not part of the baseline
+**`o4_efficiency/`: Efficiency and cost optimisation (Murat)**
+- `batched.py`: `EfficientPredictor`, the baseline predictor plus `predict_batch` (same answers, about 60× faster) and optional fp16 weights (model file halved)
+- `profiling.py`: where EXP002's time and memory go, projected to 200,000 predictions
+- `school_scoring.py`: scores a whole RY25 school in one batched call (needs the RY25 files, which are not in this branch)
+- `cli.py`: `python -m o4_efficiency.cli profile` and `export-model` (writes the browser model)
+
+**`integrated_pipeline/`: The integrated pipeline (Shlok)**
+- `baseline.py`: downloads RYA's baseline from GitHub (pinned commit); set `SCRP_BASELINE_DIR` to use a local copy instead
+- `contracts.py`: the data passed between stages (request, results, flags)
+- `simulate.py`: RYA's B matrix, the d̂ statistic and his latent-type simulator
+- `screen.py`: Step 1, the ρ check and the PASS / FLAGGED / REJECT decision (O1, plus the small-group rule)
+- `boundary.py`: Step 2, the boundary pair and the minimal-effects test
+- `nulls.py`: Step 3, the null from the network (O4) or from simulation (O2)
+- `uncertainty.py`: Step 4, the p-value range over ρ (O3)
+- `run.py`: `Pipeline` and `build_pipeline()`, which join the steps
+- `scenarios.py`, `demo.py`: the ten demo cases; `python -m integrated_pipeline.demo`
+- `benchmark.py`: 400 random comparisons against RYA's simulation; `python -m integrated_pipeline.benchmark`
+- `bayes_eval.py`: Pratik's Bayesian analogue, used for evaluation only
+- `pipeline_walkthrough.ipynb`: the detailed, step-by-step walkthrough
+
+**`tests/`: Automated checks (`pytest -q`, 33 tests)**
+- `test_pipeline.py`: pipeline maths, routing and flags, plus a real-EXP002 check against RYA's simulator
+- `test_o4_batching.py`, `test_o4_profiling.py`, `test_o4_school_scoring.py`: O4 gives the same answers as the baseline
+- `synthetic_project.py`: builds a small fake project (fake model and data) for the tests; `conftest.py` loads the baseline first
+
+## Open points for RYA
+
+- **ε:** 0.1 is a placeholder for the smallest difference that counts.
+- **Portal test code:** the boundary step follows the draft paper and may change once we see the portal's code.
+- **Test-retest counts:** these are needed to size the ρ uncertainty from data instead of using ±5%.
+- **Calibration:** when the true gap is exactly ε, the test says "meaningful" 7–8% of the time instead of 5% (12% for very small groups).
 
 ## Team rules
 
-- `main` = baseline. Work on your own branch (`shlok`, `murat`, `sin-wei`, `shuyun`, `pratik`) and run `git merge main` at the start of each session.
-- Never edit `data/` or `known_answers/`.
-- Before merging: `pytest -q` (47 passed) and `baseline` (359/359). Attach `baseline_report.csv` to the pull request.
-- The RY25 CSVs are confidential student data. Keep the repo private, and check the RYA/University data agreement before pushing to any cloud host.
+- Work on your own branch and open a pull request into this one. Run `pytest -q` before merging.
+- Don't commit `.baseline/`, real survey data or anything from Box.

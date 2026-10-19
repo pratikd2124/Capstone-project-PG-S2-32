@@ -1,8 +1,9 @@
 [project]
-name = "scrp-toolkit"
-version = "0.1.0"
-description = "Statistical Core Refinement Project — cleaned-up pipeline (PG-S2-32)"
+name = "gemfinder-prototype-pipeline"
+version = "0.3.0"
+description = "PG-S2-32 prototype pipeline: RYA's Gemfinder core with O1 screening, O2 fallback, O3 uncertainty and O4 efficiency"
 requires-python = ">=3.10"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["."]

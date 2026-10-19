@@ -1,6 +1,6 @@
 @echo off
 rem ------------------------------------------------------------------------------
-rem  SCRP toolkit: one-click setup for Windows.
+rem  Gemfinder prototype pipeline: one-click setup for Windows.
 rem
 rem  Run this from the Anaconda Prompt, in the repo folder (the one with README.md):
 rem      setup_env.bat
@@ -35,15 +35,14 @@ python -m ipykernel install --user --name scrp --display-name "Python (scrp)" ||
 
 echo.
 echo [4/4] Checking everything works...
-python -c "import sys, numpy, pandas, scipy, sklearn, torch, onnxruntime; print('   Python', sys.version.split()[0], '| numpy', numpy.__version__, '| pandas', pandas.__version__, '| torch', torch.__version__, '| onnxruntime', onnxruntime.__version__)" || goto :failed
+python -c "import sys, numpy, pandas, scipy, sklearn, torch, onnx, onnxruntime; print('   Python', sys.version.split()[0], '| numpy', numpy.__version__, '| pandas', pandas.__version__, '| torch', torch.__version__, '| onnxruntime', onnxruntime.__version__)" || goto :failed
 python -m pytest -q -p no:cacheprovider tests || goto :failed
-python -m scrp_toolkit.cli baseline --skip-dataset || goto :failed
+python -c "from integrated_pipeline.baseline import data_root; print('   Baseline ready in', data_root())" || goto :failed
 
 echo.
 echo ==============================================================================
 echo  All set. From now on:  conda activate scrp
-echo  Full check (about 2 min):  python -m scrp_toolkit.cli baseline
-echo  Walkthrough: open walkthrough.ipynb in VS Code, kernel "Python (scrp)"
+echo  Demo: open pipeline_showcase.ipynb, kernel "Python (scrp)"
 echo ==============================================================================
 exit /b 0
 

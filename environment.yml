@@ -1,4 +1,4 @@
-# SCRP toolkit: the team's Python environment.
+# Gemfinder prototype pipeline: the team's Python environment.
 #
 # Create it (once):   conda env create -f environment.yml
 # Update it later:    conda env update -f environment.yml --prune

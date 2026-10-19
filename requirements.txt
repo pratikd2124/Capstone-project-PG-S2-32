@@ -1,25 +1,23 @@
-# SCRP toolkit: Python packages.
-# Tested together on Python 3.11 (Windows, conda env "scrp"): numpy 2.4, pandas 3.0, torch 2.14 (CPU),
-# onnxruntime 1.30. The ranges below allow bug-fix updates but stop at the next major version,
-# so everyone ends up with versions that behave the same.
+# Gemfinder prototype pipeline (PG-S2-32): Python packages.
+# Tested on Python 3.11 (Windows, conda env "scrp"). The ranges allow bug-fix updates but stop
+# at the next major version, so everyone gets versions that behave the same.
 #
-# Easiest install: run setup_env.bat (Windows) or setup_env.sh (Mac/Linux), which uses
+# Easiest install: setup_env.bat (Windows) or setup_env.sh (Mac/Linux), which uses
 # environment.yml -> this file. Manual install: pip install -r requirements.txt
+#
+# RYA's baseline code (scrp_toolkit) is not a package here: it is downloaded from the team's
+# GitHub repo (Baseline-Recreation branch) on first run, see integrated_pipeline/baseline.py.
 
-# Core pipeline
 numpy>=2.0,<3
 pandas>=2.2,<4
-torch>=2.5,<3          # network design + training experiments (the CPU build is enough)
-onnxruntime>=1.20,<2   # runs RYA's trained model (EXP002_nn_optimal_epoch.onnx)
-scipy>=1.11,<2         # pipeline: boundary search, Gamma/Weibull tails
-scikit-learn>=1.5,<2   # pipeline: SIN-WEI's O1 screening module imports it (also brings joblib)
+scipy>=1.11,<2         # boundary search, Gamma/Weibull tails (O2, O3)
+scikit-learn>=1.5,<2   # SIN-WEI's O1 screening module (also brings joblib)
+onnxruntime>=1.20,<2   # runs RYA's trained model EXP002
+onnx>=1.16,<2          # O4: batch-ready and fp16 versions of EXP002
+torch>=2.5,<3          # baseline network design, used by O4 profiling (the CPU build is enough)
 matplotlib>=3.7,<4     # plots
-seaborn>=0.13,<1       # plots
 
-# Tests
-pytest>=7.4,<9
-onnx>=1.16,<2          # the tests build a small fake model; RYA's real model is only read
-
-# Walkthrough notebook (walkthrough.ipynb)
+# Notebooks and tests
 notebook>=7.0,<8
 ipykernel>=6.0,<8
+pytest>=7.4,<9
