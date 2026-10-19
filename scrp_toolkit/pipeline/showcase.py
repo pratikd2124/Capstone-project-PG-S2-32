@@ -63,6 +63,13 @@ def _p(value):
     return "p < 0.001" if value < 0.001 else f"p = {value:.3f}"
 
 
+def _left(table):
+    """Left-align every cell and header so the text is easy to read."""
+    styler = table if hasattr(table, "set_properties") else table.style
+    return (styler.set_properties(**{"text-align": "left"})
+                  .set_table_styles([{"selector": "th", "props": [("text-align", "left")]}], overwrite=False))
+
+
 def _route(result):
     if result.reliability_flag == "RED":
         return "rejected"
@@ -99,7 +106,7 @@ class Showcase:
             })
         table = pd.DataFrame(rows).set_index("case")
         colours = {"GREEN": "#DCFCE7", "AMBER": "#FEF3C7", "RED": "#FEE2E2"}
-        return table.style.apply(lambda col: [f"background-color: {colours.get(v, '')}" for v in col],
+        return _left(table).apply(lambda col: [f"background-color: {colours.get(v, '')}" for v in col],
                                  subset=["flag"])
 
     # --- one case in plain words --------------------------------------------------------
@@ -145,7 +152,7 @@ class Showcase:
                          "p-value range": f"{low:.3f} – {high:.3f}",
                          "crosses 0.05?": "yes" if low < 0.05 <= high else "no",
                          "flag": r.reliability_flag})
-        return pd.DataFrame(rows).set_index("case")
+        return _left(pd.DataFrame(rows).set_index("case"))
 
     # --- O4: speed ----------------------------------------------------------------------
     def speed(self, repeats=3):
@@ -160,10 +167,10 @@ class Showcase:
 
         half = build_pipeline(self.root, weights="fp16")
         same = all(half.run(r).decision == self.results[k].decision for k, r in self.cases.items())
-        return pd.DataFrame({
+        return _left(pd.DataFrame({
             "": ["original (network only)", "pipeline (all checks)"],
             "typical time per comparison": [f"{per_case(self.original):.1f} ms", f"{per_case(self.pipeline):.0f} ms"],
-        }).set_index(""), f"Half-size network (for the browser) gives the same decisions on all cases: {same}"
+        }).set_index("")), f"Half-size network (for the browser) gives the same decisions on all cases: {same}"
 
 
 def start(root=None, epsilon=0.1):
