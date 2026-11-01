@@ -116,3 +116,17 @@ def test_closed_form_falls_back_on_singular_rows():
               np.array([[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 0.9, 0.1], [0, 0, 0.1, 0.9]])):   # rank-deficient
         many, one = d_hat_scaled(X, Y, P), d_hat_scaled(X[:1], Y[:1], P)
         np.testing.assert_array_equal(many, np.repeat(one, len(X)))
+
+
+def test_screening_classifier_matches_the_pandas_version(pipe, cases):
+    """SIN-WEI's classifier step without pandas gives the same probability as her original code."""
+    import pandas as pd
+    from o1_screening.o1_screening import extract_screening_features
+
+    gate = pipe.gate
+    for req in cases:
+        x, y = np.asarray(req.x, dtype=float), np.asarray(req.y, dtype=float)
+        feats = extract_screening_features(X=x / x.sum(), Y=y / y.sum(), n_x=x.sum(), n_y=y.sum(), P_matrix=req.P)
+        row = pd.Series(feats, dtype=float).reindex(gate.feature_order)
+        expected = float(gate.detector.predict_proba(pd.DataFrame([row.values], columns=gate.feature_order))[0, 1])
+        assert gate._classifier_result(x, y, req.P)["incompatibility_probability"] == expected

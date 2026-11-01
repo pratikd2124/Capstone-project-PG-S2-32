@@ -259,12 +259,17 @@ class O1ScreeningGate:
 
         feats = extract_screening_features(X=X, Y=Y, n_x=n_x, n_y=n_y, P_matrix=P)
 
-        feat_series = pd.Series(feats, dtype=float).reindex(self.feature_order)
-        if feat_series.isna().any():
-            missing = feat_series[feat_series.isna()].index.tolist()
+        # One row in feature order. Built with numpy instead of pandas Series/DataFrame (same
+        # numbers, much faster per call; O4, Murat). A DataFrame is still passed to detectors
+        # that were fitted with column names (her sklearn joblib), so they see what they expect.
+        row = np.array([float(feats.get(k, np.nan)) for k in self.feature_order])
+        if np.isnan(row).any():
+            missing = [k for k, v in zip(self.feature_order, row) if np.isnan(v)]
             raise ValueError(f"Missing detector features: {missing}")
 
-        detector_input = pd.DataFrame([feat_series.values], columns=self.feature_order)
+        detector_input = row[None, :]
+        if hasattr(self.detector, "feature_names_in_"):
+            detector_input = pd.DataFrame(detector_input, columns=self.feature_order)
         probability = float(self.detector.predict_proba(detector_input)[0, 1])
 
         return {
