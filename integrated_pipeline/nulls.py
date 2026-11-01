@@ -41,10 +41,31 @@ class NetworkNull:
     def __call__(self, req, boundary, P=None):
         start = time.perf_counter()
         shape, rate = self.gamma_params(boundary.x, boundary.y, req.P if P is None else P, req.item)
+        return self._null(shape, rate, _ms_since(start))
+
+    def many(self, reqs, boundaries):
+        """The network null for several (request, boundary) pairs in ONE predict_batch call.
+
+        Same numbers as calling this object once per pair (each row is computed on its own);
+        used so a request and its rho variants cost one network call instead of five.
+        """
+        start = time.perf_counter()
+        keys = []
+        for i, req in enumerate(reqs):
+            key = f"__req__{req.item}__{i}"
+            self.predictor.p_matrices[key] = np.asarray(req.P, dtype=float)
+            keys.append(key)
+        x = np.array([np.asarray(b.x, dtype=float) for b in boundaries])
+        y = np.array([np.asarray(b.y, dtype=float) for b in boundaries])
+        shapes, rates = self.predictor.predict_batch(x, y, keys)
+        ms = _ms_since(start) / len(reqs)
+        return [self._null(float(s), float(r), ms) for s, r in zip(shapes, rates)]
+
+    def _null(self, shape, rate, ms):
         usable = np.isfinite(shape) and np.isfinite(rate) and shape > 0 and rate > 0
         q95 = float(stats.gamma.ppf(0.95, shape, scale=1 / rate)) if usable else float("nan")
         return NullDistribution("gamma", f"nn_{self.predictor.weights}", {"shape": shape, "rate": rate},
-                                q95, _ms_since(start))
+                                q95, ms)
 
 
 def simulated_null(req, boundary, method="mc_empirical", draws=4000, seed=2026, P=None):

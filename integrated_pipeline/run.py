@@ -15,7 +15,7 @@ checks, no fallback, no range.
 from __future__ import annotations
 
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Optional
 
 import numpy as np
@@ -24,7 +24,7 @@ from .boundary import find_boundary, minimal_effects_test
 from .contracts import AMBER, FLAGGED, GREEN, RED, REJECT, PipelineResult, RhoCheck
 from .nulls import NetworkNull, simulated_null
 from .screen import load_gate, screen, validate_rho
-from .uncertainty import propagate
+from .uncertainty import propagate, rho_variants
 
 
 @dataclass
@@ -75,7 +75,12 @@ class Pipeline:
         # 2. Null distribution: network if screening passed, otherwise the fallback.
         reasons = []
         use_fallback = screening.route == FLAGGED
-        null = self._null(req, boundary, use_fallback)
+        variant_nulls = {}
+        if not use_fallback and self.cfg.uncertainty:
+            # O4: the request and its rho variants (step 3+) go through the network in one call.
+            null, variant_nulls = self._network_nulls_with_variants(req, boundary)
+        else:
+            null = self._null(req, boundary, use_fallback)
         if not use_fallback and not np.isfinite(null.q95):
             reasons.append("network returned no usable Gamma; fallback used")
             use_fallback = True
@@ -85,7 +90,8 @@ class Pipeline:
         test = minimal_effects_test(req, boundary, null)
         spread = None
         if self.cfg.uncertainty and np.isfinite(test.p_value):
-            spread = propagate(req, test.p_value, lambda r: self._p_for(r, use_fallback), self.cfg.rho_delta)
+            spread = propagate(req, test.p_value, lambda r: self._p_for(r, use_fallback, variant_nulls),
+                               self.cfg.rho_delta)
 
         # The flag and the reasons for it.
         unstable = spread is not None and not spread.decision_stable
@@ -116,10 +122,28 @@ class Pipeline:
             return simulated_null(req, boundary, self.cfg.fallback_method, draws or self.cfg.fallback_draws)
         return self.net(req, boundary)
 
-    def _p_for(self, req, use_fallback):
+    def _network_nulls_with_variants(self, req, boundary):
+        """Network null for the request and for every rho variant step 3+ will try, in one call.
+
+        Returns the request's null and a dict P-bytes -> (boundary, null) for the variants. The
+        variants are the same ones propagate() builds (rho_variants is deterministic), so the
+        p-value range is unchanged; only the five separate network calls become one.
+        """
+        variants, _ = rho_variants(req, self.cfg.rho_delta)
+        variant_reqs = [replace(req, rho=tuple(map(tuple, P))) for P in variants]
+        boundaries = [find_boundary(r, self.cfg.test_mode) for r in variant_reqs]
+        nulls = self.net.many([req] + variant_reqs, [boundary] + boundaries)
+        cache = {r.P.tobytes(): (b, n) for r, b, n in zip(variant_reqs, boundaries, nulls[1:])}
+        return nulls[0], cache
+
+    def _p_for(self, req, use_fallback, variant_nulls=None):
         """p-value (and the Gamma, if any) for one rho variant."""
-        boundary = find_boundary(req, self.cfg.test_mode)
-        null = self._null(req, boundary, use_fallback, self.cfg.uncertainty_draws)
+        cached = None if use_fallback or not variant_nulls else variant_nulls.get(req.P.tobytes())
+        if cached is not None:
+            boundary, null = cached
+        else:
+            boundary = find_boundary(req, self.cfg.test_mode)
+            null = self._null(req, boundary, use_fallback, self.cfg.uncertainty_draws)
         p = minimal_effects_test(req, boundary, null).p_value
         return p, null.params.get("shape"), null.params.get("rate")
 

@@ -16,7 +16,7 @@ This branch contains only the new work. RYA's baseline (the `scrp_toolkit` packa
 - **Handles a small class against a national cohort** without retraining the network.
 - **Answers those edge cases reliably:** flagged cases use RYA's own simulation instead of the network.
 - **Shows how much a result depends on question reliability:** a p-value range over ρ (AMBER if the decision could flip).
-- **Runs on an optimised network:** batched, with optional fp16 weights, giving the same decisions.
+- **Runs on an optimised network:** batched (same answers), with optional fp16 weights that halve the model file and change very few decisions (0.07% in 3,000 benchmark comparisons).
 
 ## Folders
 
@@ -40,10 +40,12 @@ This branch contains only the new work. RYA's baseline (the `scrp_toolkit` packa
 - `loader.py`: imports his files without editing them
 
 **`o4_efficiency/`: Efficiency and cost optimisation (Murat)**
-- `batched.py`: `EfficientPredictor`, the baseline predictor plus `predict_batch` (same answers, about 60× faster) and optional fp16 weights (model file halved)
+- `batched.py`: `EfficientPredictor`, the baseline predictor plus `predict_batch` (same answers; a 40-item school report about 27× faster, bulk runs about 60×) and optional fp16 weights (model file halved)
 - `profiling.py`: where EXP002's time and memory go, projected to 200,000 predictions
 - `school_scoring.py`: scores a whole RY25 school in one batched call (needs the RY25 files, which are not in this branch)
-- `cli.py`: `python -m o4_efficiency.cli profile` and `export-model` (writes the browser model)
+- `pipeline_cost.py`: what the whole pipeline costs per comparison, stage by stage, against the original direct-to-network path, and fp16 vs fp32 decisions
+- `FINDINGS.md`: what O4 measured, changed, and tried and dropped
+- `cli.py`: `python -m o4_efficiency.cli profile`, `export-model` (writes the browser model) and `pipeline-cost`
 
 **`integrated_pipeline/`: The integrated pipeline (Shlok)**
 - `baseline.py`: downloads RYA's baseline from GitHub (pinned commit); set `SCRP_BASELINE_DIR` to use a local copy instead

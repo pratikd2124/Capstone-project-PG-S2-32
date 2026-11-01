@@ -2,6 +2,7 @@
 
     python -m o4_efficiency.cli profile                  # where EXP002's time and memory go
     python -m o4_efficiency.cli export-model             # EXP002 with fp16 weights, for the browser
+    python -m o4_efficiency.cli pipeline-cost            # what the whole pipeline costs vs the original
 """
 from __future__ import annotations
 
@@ -37,6 +38,19 @@ def cmd_export_model(args) -> int:
     return 0
 
 
+def cmd_pipeline_cost(args) -> int:
+    from .pipeline_cost import decision_agreement, print_report, run_pipeline_cost, to_json_dict
+
+    result = run_pipeline_cost(args.project_root, n_cases=args.n_cases)
+    if args.equivalence_cases:
+        result["equivalence"] = decision_agreement(args.project_root, n_cases=args.equivalence_cases)
+    print_report(result)
+    if args.out:
+        Path(args.out).write_text(json.dumps(to_json_dict(result), indent=2, default=float))
+        print(f"\nSaved: {args.out}")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = parser.add_subparsers(dest="command", required=True)
@@ -53,6 +67,14 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--weights", choices=["fp16", "fp32"], default="fp16")
     p.add_argument("--out", default="exp002_fp16.onnx")
     p.set_defaults(func=cmd_export_model)
+
+    p = sub.add_parser("pipeline-cost", help="What the integrated pipeline costs, stage by stage, vs the original")
+    p.add_argument("--project-root", default=None, help="Baseline data folder (default: downloaded from GitHub)")
+    p.add_argument("--n-cases", type=int, default=200, help="Benchmark comparisons to time (default 200)")
+    p.add_argument("--equivalence-cases", type=int, default=1000,
+                   help="Comparisons for the fp16 vs fp32 decision check (0 skips it; default 1000)")
+    p.add_argument("--out", default="pipeline_cost.json", help="JSON report")
+    p.set_defaults(func=cmd_pipeline_cost)
     return parser
 
 

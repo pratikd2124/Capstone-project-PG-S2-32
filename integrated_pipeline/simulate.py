@@ -21,10 +21,26 @@ B = np.array([
 ])
 
 
+_SIGMA_CACHE: dict = {}
+_SIGMA_CACHE_MAX = 4096
+
+
 def sigma_stack(P: np.ndarray) -> np.ndarray:
-    """RYA's sigma_maker for j = 1..4: Sigma_j = diag(rho_j) - rho_j rho_j^T. Shape (4, 4, 4)."""
+    """RYA's sigma_maker for j = 1..4: Sigma_j = diag(rho_j) - rho_j rho_j^T. Shape (4, 4, 4).
+
+    O4: the boundary search evaluates d_hat thousands of times for the same rho, so the stack
+    is built once per rho and reused (same numbers; returned read-only so it can't be changed).
+    """
     P = np.asarray(P, dtype=float)
-    return np.stack([np.diag(r) - np.outer(r, r) for r in P])
+    key = P.tobytes()
+    stack = _SIGMA_CACHE.get(key)
+    if stack is None:
+        stack = np.stack([np.diag(r) - np.outer(r, r) for r in P])
+        stack.setflags(write=False)
+        if len(_SIGMA_CACHE) >= _SIGMA_CACHE_MAX:
+            _SIGMA_CACHE.clear()
+        _SIGMA_CACHE[key] = stack
+    return stack
 
 
 def _quad_form(diff: np.ndarray, sig_hat: np.ndarray) -> np.ndarray:
