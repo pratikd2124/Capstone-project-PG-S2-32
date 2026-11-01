@@ -49,14 +49,17 @@ Measured on 200 benchmark comparisons (1 Nov):
 |---|---|---|
 | Original: straight to the network | ~0.6 ms | ~2 min |
 | Pipeline, before O4's changes | ~9.1 ms | ~30 min |
-| Pipeline, now | ~7.3 ms | ~24 min |
+| Pipeline, now (`run`) | ~6.4 ms | ~21 min |
+| Pipeline, now, a school report of 40 through `run_batch` | ~5.8 ms | ~19 min |
 
-- Network route (PASS, 77% of comparisons): 5.2 → 3.3 ms. Fallback route (FLAGGED): about 21 ms, nearly all simulation.
-- Two changes, both with identical results (0 differences on 309 cases, fp32 and fp16):
-  - The network used to be called five times per comparison: once for the comparison and once for each of the four rho variants of step 3+. Now all five go in one `predict_batch` call (`NetworkNull.many`, `Pipeline._network_nulls_with_variants`).
+- Network route (PASS, 77% of comparisons): 5.2 → 3.3 ms. Fallback route (FLAGGED): 21 → 17 ms.
+- Four changes, none of which changes a decision, p-value, rho range, flag or reason (checked on 3,009 cases: 3,000 benchmark comparisons plus the demo scenarios):
+  - The network used to be called five times per comparison: once for the comparison and once for each of the four rho variants of step 3+. Now all five go in one `predict_batch` call (`NetworkNull.many`, `Pipeline._network_nulls_many`).
   - The boundary search evaluates d_hat thousands of times for the same rho; the four covariance matrices it needs are now built once per rho and reused (`sigma_stack` cache in `simulate.py`).
-- Where the time goes now (stages overlap): fallback simulation (O2) ~41%, rho range (O3) ~31%, screening (O1) ~26%, boundary pair ~20%, network ~8%. The network is no longer the bottleneck. The rest can't be cut much further without changing random draws (and so results) or teammates' code.
-- At 8 million comparisons a year (200,000 responses × 40 items, the upper end), the pipeline needs about 16 CPU hours. How many comparisons 200,000 responses means is still to be confirmed.
+  - The simulator's d_hat on its 4,000 trials builds each trial's 3x3 matrix from four per-rho blocks and inverts it in closed form instead of one LAPACK solve per trial (`_quad_form_closed`): about 6x faster for that step. It agrees with the general path to ~1e-15; the only values that moved were a few fallback q95s, by 1e-15 relative. Singular rows are redone the general way. Single-row calls (the boundary search) keep the general path, which is faster there.
+  - `Pipeline.run_batch` (for example a school's 40 items) now runs the cheap checks for every request, then sends all network-route requests and their rho variants through the network in one call, sharing variants between requests on the same item and group pair. Same results as `run()`; a 40-item report takes ~232 ms instead of ~257 ms.
+- Where the time goes now (stages overlap): fallback simulation (O2), rho range (O3) and screening (O1, SIN-WEI's gate, run twice per comparison with pandas) take most of it; the network is about 5%. The rest can't be cut much further without changing random draws (and so results) or teammates' code.
+- At 8 million comparisons a year (200,000 responses × 40 items, the upper end), the pipeline needs about 13–14 CPU hours. How many comparisons 200,000 responses means is still to be confirmed.
 
 ## Fallback cost
 
@@ -72,4 +75,4 @@ RYA's simulation, written student by student as in the R code, took up to about 
 
 - Run the fp16 model in a browser (onnxruntime-web) and compare with Python.
 - Agree the equivalence tolerance with the team.
-- Reduce repeated work for comparisons that share a reference group.
+- Screening (O1) runs SIN-WEI's gate twice per comparison with pandas; a batched version would be hers to make.

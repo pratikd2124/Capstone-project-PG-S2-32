@@ -52,33 +52,62 @@ class Pipeline:
         start = time.perf_counter()
         if self.cfg.mode == "direct":
             return self._run_direct(req, start)
+        early, state = self._check_and_screen(req, start)
+        return early if early is not None else self._decide(req, start, *state)
 
-        def finish(**fields):
-            fields.setdefault("provenance", {})["total_ms"] = 1000 * (time.perf_counter() - start)
-            return PipelineResult(request=req, **fields)
+    def run_batch(self, requests):
+        """Run several comparisons (for example a school's 40 items) with the same results as run().
+
+        O4: the cheap per-request steps run first; then every network-route request and its rho
+        variants go through the network in ONE call, with rho variants shared between requests
+        on the same item; then each request is finished. total_ms is the batch time per request.
+        """
+        requests = list(requests)
+        if self.cfg.mode == "direct" or not requests:
+            return [self.run(r) for r in requests]
+        start = time.perf_counter()
+        staged = [(req, *self._check_and_screen(req, start)) for req in requests]
+        wanted = [(i, req, state[1]) for i, (req, early, state) in enumerate(staged)
+                  if early is None and state[2].route != FLAGGED]
+        prefetched = dict(zip([i for i, _, _ in wanted],
+                              self._network_nulls_many([(req, b) for _, req, b in wanted])))
+        results = [early if early is not None else self._decide(req, start, *state, prefetched=prefetched.get(i))
+                   for i, (req, early, state) in enumerate(staged)]
+        per_request = 1000 * (time.perf_counter() - start) / len(requests)
+        for r in results:
+            r.provenance["total_ms"] = per_request
+        return results
+
+    def _check_and_screen(self, req, start):
+        """Steps 1a and 1b. Returns (a RED result, None) or (None, (rho_check, boundary, screening))."""
+        def rejected(**fields):
+            return PipelineResult(request=req, decision=None, p_value=None, reliability_flag=RED,
+                                  uncertainty_range=None, provenance={"total_ms": 1000 * (time.perf_counter() - start)},
+                                  **fields)
 
         # 1a. Is rho usable?
         rho_check = validate_rho(req)
         if rho_check.status == "reject":
-            return finish(decision=None, p_value=None, reliability_flag=RED, uncertainty_range=None,
-                          flag_reasons=list(rho_check.reasons), rho_check=rho_check,
-                          screening=screen(req, rho_check, None, self.gate))
+            return rejected(flag_reasons=list(rho_check.reasons), rho_check=rho_check,
+                            screening=screen(req, rho_check, None, self.gate)), None
 
         # Boundary pair, then 1b. can the network be trusted here?
         boundary = find_boundary(req, self.cfg.test_mode)
         screening = screen(req, rho_check, boundary, self.gate, self.cfg.small_group_n, self.cfg.small_group_ratio)
         if screening.route == REJECT:
-            return finish(decision=None, p_value=None, reliability_flag=RED, uncertainty_range=None,
-                          flag_reasons=list(screening.reasons), rho_check=rho_check,
-                          screening=screening, boundary=boundary)
+            return rejected(flag_reasons=list(screening.reasons), rho_check=rho_check,
+                            screening=screening, boundary=boundary), None
+        return None, (rho_check, boundary, screening)
 
+    def _decide(self, req, start, rho_check, boundary, screening, prefetched=None):
+        """Steps 2, 3 and 3+ for a request that passed 1a/1b. prefetched = (null, variant nulls) from the network."""
         # 2. Null distribution: network if screening passed, otherwise the fallback.
         reasons = []
         use_fallback = screening.route == FLAGGED
         variant_nulls = {}
-        if not use_fallback and self.cfg.uncertainty:
+        if not use_fallback:
             # O4: the request and its rho variants (step 3+) go through the network in one call.
-            null, variant_nulls = self._network_nulls_with_variants(req, boundary)
+            null, variant_nulls = prefetched or self._network_nulls_many([(req, boundary)])[0]
         else:
             null = self._null(req, boundary, use_fallback)
         if not use_fallback and not np.isfinite(null.q95):
@@ -103,38 +132,50 @@ class Pipeline:
         if rho_check.status == "warn":
             reasons += rho_check.reasons
 
-        return finish(
-            decision=test.decision, p_value=test.p_value,
+        return PipelineResult(
+            request=req, decision=test.decision, p_value=test.p_value,
             reliability_flag=AMBER if (use_fallback or unstable) else GREEN,
             uncertainty_range=None if spread is None else (spread.p_low, spread.p_high),
             flag_reasons=reasons or ["screening passed; decision stable"],
             rho_check=rho_check, screening=screening, boundary=boundary, null=null, test=test,
             uncertainty=spread,
             provenance={"route": screening.route, "null_method": null.method,
-                        "test_mode": self.cfg.test_mode, "weights": self.cfg.weights},
+                        "test_mode": self.cfg.test_mode, "weights": self.cfg.weights,
+                        "total_ms": 1000 * (time.perf_counter() - start)},
         )
-
-    def run_batch(self, requests):
-        return [self.run(r) for r in requests]
 
     def _null(self, req, boundary, use_fallback, draws=None):
         if use_fallback:
             return simulated_null(req, boundary, self.cfg.fallback_method, draws or self.cfg.fallback_draws)
         return self.net(req, boundary)
 
-    def _network_nulls_with_variants(self, req, boundary):
-        """Network null for the request and for every rho variant step 3+ will try, in one call.
+    def _network_nulls_many(self, pairs):
+        """Network nulls for (request, boundary) pairs and, if step 3+ is on, their rho variants, in ONE call.
 
-        Returns the request's null and a dict P-bytes -> (boundary, null) for the variants. The
-        variants are the same ones propagate() builds (rho_variants is deterministic), so the
-        p-value range is unchanged; only the five separate network calls become one.
+        Returns one (null, variant_nulls) per pair; variant_nulls maps P-bytes -> (boundary, null)
+        for the variants propagate() will ask for. The variants are the same ones propagate()
+        builds (rho_variants is deterministic), so p-values and ranges are unchanged. Requests on
+        the same item and group pair share their variants' boundaries.
         """
-        variants, _ = rho_variants(req, self.cfg.rho_delta)
-        variant_reqs = [replace(req, rho=tuple(map(tuple, P))) for P in variants]
-        boundaries = [find_boundary(r, self.cfg.test_mode) for r in variant_reqs]
-        nulls = self.net.many([req] + variant_reqs, [boundary] + boundaries)
-        cache = {r.P.tobytes(): (b, n) for r, b, n in zip(variant_reqs, boundaries, nulls[1:])}
-        return nulls[0], cache
+        reqs, boundaries, rows, shared = [], [], [], {}
+        for req, boundary in pairs:
+            own_row = len(reqs)
+            reqs.append(req)
+            boundaries.append(boundary)
+            variant_keys = []
+            if self.cfg.uncertainty:
+                for P in rho_variants(req, self.cfg.rho_delta)[0]:
+                    variant = replace(req, rho=tuple(map(tuple, P)))
+                    key = (variant.P.tobytes(), variant.x.tobytes(), variant.y.tobytes(), variant.epsilon)
+                    if key not in shared:
+                        shared[key] = len(reqs)
+                        reqs.append(variant)
+                        boundaries.append(find_boundary(variant, self.cfg.test_mode))
+                    variant_keys.append(key)
+            rows.append((own_row, variant_keys))
+        nulls = self.net.many(reqs, boundaries) if reqs else []
+        return [(nulls[own_row], {key[0]: (boundaries[shared[key]], nulls[shared[key]]) for key in variant_keys})
+                for own_row, variant_keys in rows]
 
     def _p_for(self, req, use_fallback, variant_nulls=None):
         """p-value (and the Gamma, if any) for one rho variant."""

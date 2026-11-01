@@ -80,6 +80,11 @@ def run_pipeline_cost(project_root=None, n_cases: int = 200, seed: int = 5) -> d
             ms, res = _time_runs(p, cases)
             rows.append({"path": f"pipeline ({w} weights)", "ms_per_comparison": ms})
             results = results or res
+        # A school report: 40 items through run_batch (same results as run(), one network call).
+        start = time.perf_counter()
+        for i in range(0, len(cases), 40):
+            robust["fp32"].run_batch(cases[i:i + 40])
+        rows.append({"path": "pipeline (fp32), 40 per run_batch", "ms_per_comparison": (time.perf_counter() - start) / len(cases) * 1e3})
         paths = pd.DataFrame(rows)
         paths["x_original"] = paths["ms_per_comparison"] / paths["ms_per_comparison"].iloc[0]
         for n in COMPARISONS_PER_YEAR:
