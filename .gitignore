@@ -10,6 +10,7 @@ venv/
 
 profile_report.json
 pipeline_cost.json
+tolerance.json
 exp002_fp16.onnx
 
 # RYA's baseline code and model files, downloaded from GitHub on first run

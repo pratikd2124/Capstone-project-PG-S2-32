@@ -62,6 +62,35 @@ Measured on 200 benchmark comparisons (1 Nov):
 - Where the time goes now (stages overlap): fallback simulation (O2) ~45%, rho range (O3) ~36%, boundary search ~30%; screening ~7%, the network ~12%. The rest can't be cut much further without changing random draws, draw counts or the number of rho variants, which would change results and are Shuyun's and Pratik's decisions.
 - At 8 million comparisons a year (200,000 responses × 40 items, the upper end), the pipeline needs about 11–12 CPU hours. How many comparisons 200,000 responses means is still to be confirmed.
 
+## Evidence for an equivalence tolerance
+
+`python -m o4_efficiency.cli tolerance` (3,000 benchmark comparisons, 1 Nov)
+
+The team hasn't agreed a tolerance yet, so this measures how far cheaper settings move results against the noise the method already carries.
+
+- **Yardstick, Pratik's rho range** (±5% error mass): 2.17% of network-route decisions and 1.29% of fallback-route decisions could flip anyway.
+- **Fallback route** (698 comparisons), against a 40,000-draw reference:
+
+| Draws | q95 error, median / 95th pct | Decisions differ from reference | Differ from 4,000 | Changed by the seed alone | Time per simulation |
+|---|---|---|---|---|---|
+| 4,000 (current) | 1.1% / 4.9% | 0.43% | – | 0.43% | 5.6 ms |
+| 2,000 | 1.6% / 7.2% | 0.29% | 0.43% | 0.72% | 2.9 ms |
+| 1,000 | 1.9% / 8.9% | 0.29% | 0.72% | 0.43% | 1.5 ms |
+
+  At the current 4,000 draws the fallback's q95 already moves by about 1% (median) and up to about 5%, the same size as the Gamma q95 errors in Shuyun's analysis (1.4–6%, measured another way). Fewer draws didn't move decisions measurably further from the reference; the differences are 2–5 comparisons, within the noise.
+- **fp16 weights** (network route, 2,302 comparisons): q95 moves by 0.09% (median), at most 0.55%; 0.09% of decisions change. That is about a tenth of the fallback's own q95 noise.
+- **Whole pipeline with fewer draws** (fallback / rho-variant draws; counted against the current settings):
+
+| Settings | Per comparison | Decisions changed | Flags changed |
+|---|---|---|---|
+| 4,000 / 1,500 (current) | ~5.9 ms | – | – |
+| 2,000 / 1,500 | ~5.2 ms | 0.10% | 0 |
+| 2,000 / 750 | ~4.1 ms | 0.10% | 0 |
+| 1,000 / 500 | ~3.8 ms | 0.17% | 0 |
+
+- A possible rule, for the team to decide: a change is acceptable if it changes at most 0.5% of decisions (about a quarter of the rho range) and moves q95 by less than the fallback's own Monte Carlo noise (~1%). fp16 meets both. 2,000 / 750 meets the first; whether the larger q95 noise is acceptable is Shuyun's and Pratik's call. The defaults are not changed.
+- Limits: the changes are counts of 2–5 comparisons, so 0.1% and 0.3% can't be told apart; the comparisons are the benchmark's random ones, not real school data.
+
 ## Fallback cost
 
 RYA's simulation, written student by student as in the R code, took up to about 14 minutes per item for a class against a national-sized group (100,000 vs 30, 10,000 trials, measured in Python). Drawing each answer type's students together gives the same distribution in about 15–25 ms whatever the group size. The pipeline's `simulate_d_hat` already works this way.
@@ -75,5 +104,5 @@ RYA's simulation, written student by student as in the R code, took up to about 
 ## Still to do
 
 - Run the fp16 model in a browser (onnxruntime-web) and compare with Python.
-- Agree the equivalence tolerance with the team.
+- Agree the equivalence tolerance with the team (evidence above), and whether the fallback's draw counts can go down.
 - Tell SIN-WEI about the change to the pipeline's copy of `_classifier_result`, so it isn't lost if her file is copied in again.

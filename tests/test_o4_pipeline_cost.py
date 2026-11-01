@@ -130,3 +130,13 @@ def test_screening_classifier_matches_the_pandas_version(pipe, cases):
         row = pd.Series(feats, dtype=float).reindex(gate.feature_order)
         expected = float(gate.detector.predict_proba(pd.DataFrame([row.values], columns=gate.feature_order))[0, 1])
         assert gate._classifier_result(x, y, req.P)["incompatibility_probability"] == expected
+
+
+def test_tolerance_command_writes_report(project, tmp_path):
+    out = tmp_path / "tolerance.json"
+    assert main(["tolerance", "--project-root", str(project), "--n-cases", "30", "--out", str(out)]) == 0
+    report = json.loads(out.read_text())
+    assert [r["draws"] for r in report["fallback_draws"]] == [4000, 2000, 1000]
+    assert report["fallback_draws"][0]["decisions_differ_from_4000"] == 0
+    current = report["whole_pipeline"][0]
+    assert current["settings"].startswith("current") and current["decisions_changed"] == 0

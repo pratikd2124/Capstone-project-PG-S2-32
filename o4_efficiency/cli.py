@@ -3,6 +3,7 @@
     python -m o4_efficiency.cli profile                  # where EXP002's time and memory go
     python -m o4_efficiency.cli export-model             # EXP002 with fp16 weights, for the browser
     python -m o4_efficiency.cli pipeline-cost            # what the whole pipeline costs vs the original
+    python -m o4_efficiency.cli tolerance                # how far cheaper settings move results, vs existing noise
 """
 from __future__ import annotations
 
@@ -51,6 +52,18 @@ def cmd_pipeline_cost(args) -> int:
     return 0
 
 
+def cmd_tolerance(args) -> int:
+    from .pipeline_cost import to_json_dict
+    from .tolerance import print_report, run_tolerance_study
+
+    result = run_tolerance_study(args.project_root, n_cases=args.n_cases)
+    print_report(result)
+    if args.out:
+        Path(args.out).write_text(json.dumps(to_json_dict(result), indent=2, default=float))
+        print(f"\nSaved: {args.out}")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = parser.add_subparsers(dest="command", required=True)
@@ -75,6 +88,12 @@ def build_parser() -> argparse.ArgumentParser:
                    help="Comparisons for the fp16 vs fp32 decision check (0 skips it; default 1000)")
     p.add_argument("--out", default="pipeline_cost.json", help="JSON report")
     p.set_defaults(func=cmd_pipeline_cost)
+
+    p = sub.add_parser("tolerance", help="How far fewer draws and fp16 move results, against the method's own noise")
+    p.add_argument("--project-root", default=None, help="Baseline data folder (default: downloaded from GitHub)")
+    p.add_argument("--n-cases", type=int, default=3000, help="Benchmark comparisons (default 3000, a few minutes)")
+    p.add_argument("--out", default="tolerance.json", help="JSON report")
+    p.set_defaults(func=cmd_tolerance)
     return parser
 
 

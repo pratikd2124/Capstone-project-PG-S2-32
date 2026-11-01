@@ -44,6 +44,7 @@ This branch contains only the new work. RYA's baseline (the `scrp_toolkit` packa
 - `profiling.py`: where EXP002's time and memory go, projected to 200,000 predictions
 - `school_scoring.py`: scores a whole RY25 school in one batched call (needs the RY25 files, which are not in this branch)
 - `pipeline_cost.py`: what the whole pipeline costs per comparison, stage by stage, against the original direct-to-network path, and fp16 vs fp32 decisions
+- `tolerance.py`: how far fewer simulation draws and fp16 move decisions and q95, against the noise the method already has (evidence for the equivalence tolerance)
 - `FINDINGS.md`: what O4 measured, changed, and tried and dropped
 - `cli.py`: `python -m o4_efficiency.cli profile`, `export-model` (writes the browser model) and `pipeline-cost`
 
