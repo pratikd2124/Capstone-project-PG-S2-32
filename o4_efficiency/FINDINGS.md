@@ -88,7 +88,8 @@ The team hasn't agreed a tolerance yet, so this measures how far cheaper setting
 | 2,000 / 750 | ~4.1 ms | 0.10% | 0 |
 | 1,000 / 500 | ~3.8 ms | 0.17% | 0 |
 
-- A possible rule, for the team to decide: a change is acceptable if it changes at most 0.5% of decisions (about a quarter of the rho range) and moves q95 by less than the fallback's own Monte Carlo noise (~1%). fp16 meets both. 2,000 / 750 meets the first; whether the larger q95 noise is acceptable is Shuyun's and Pratik's call. The defaults are not changed.
+- A possible rule, for the team to decide: a change is acceptable if it changes at most 0.5% of decisions (about a quarter of the rho range) and moves q95 by less than the fallback's own Monte Carlo noise (~1%). fp16 meets both.
+- Fewer draws are **not** proposed: they make the fallback's q95 noisier (1.1% → 1.6% median at 2,000 draws), so the defaults (4,000 / 1,500) stay. The table is kept only to show the trade-off.
 - Limits: the changes are counts of 2–5 comparisons, so 0.1% and 0.3% can't be told apart; the comparisons are the benchmark's random ones, not real school data.
 
 ## Fallback cost
@@ -103,6 +104,5 @@ RYA's simulation, written student by student as in the R code, took up to about 
 
 ## Still to do
 
-- Run the fp16 model in a browser (onnxruntime-web) and compare with Python.
-- Agree the equivalence tolerance with the team (evidence above), and whether the fallback's draw counts can go down.
+- Agree the equivalence tolerance with the team (evidence above).
 - Tell SIN-WEI about the change to the pipeline's copy of `_classifier_result`, so it isn't lost if her file is copied in again.
